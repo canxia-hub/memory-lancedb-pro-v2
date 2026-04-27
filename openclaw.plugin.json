@@ -1,0 +1,78 @@
+{
+  "id": "memory-lancedb-pro-v2",
+  "name": "memory-lancedb-pro-v2",
+  "version": "2.0.0",
+  "kind": "memory",
+  "description": "LanceDB memory plugin with wiki graph tools, shared search runtime, and host interop",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "dbPath": {
+        "type": "string",
+        "description": "Database storage path (required)"
+      },
+      "connectionMode": {
+        "type": "string",
+        "enum": ["embedded", "remote"],
+        "default": "embedded",
+        "description": "Connection mode: embedded (local) or remote (server)"
+      },
+      "tableName": {
+        "type": "string",
+        "default": "memories",
+        "description": "Table name in LanceDB"
+      },
+      "embeddingDimension": {
+        "type": "integer",
+        "default": 2560,
+        "description": "Embedding dimension"
+      },
+      "defaultScope": {
+        "type": "string",
+        "default": "default",
+        "description": "Default memory scope"
+      },
+      "retrieval": {
+        "type": "object",
+        "properties": {
+          "hybrid": { "type": "boolean", "default": true },
+          "rerank": { "type": "boolean", "default": false }
+        }
+      },
+      "hostInterop": {
+        "type": "object",
+        "properties": {
+          "enableArtifacts": { "type": "boolean", "default": true },
+          "enableEvents": { "type": "boolean", "default": true }
+        }
+      },
+      "assetsTableName": {
+        "type": "string",
+        "default": "memory_assets"
+      },
+      "assetsPath": {
+        "type": "string",
+        "description": "Assets directory path (derived from dbPath if not provided)"
+      },
+      "vault": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Wiki vault path" }
+        }
+      },
+      "context": {
+        "type": "object",
+        "properties": {
+          "includeCompiledDigestPrompt": { "type": "boolean", "default": false }
+        }
+      },
+      "obsidian": {
+        "type": "object",
+        "properties": {
+          "enabled": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "required": ["dbPath"]
+  }
+}
