@@ -58,10 +58,13 @@ A **memory slot plugin** for [OpenClaw](https://github.com/openclaw/openclaw) th
 
 ## Dependencies & Attribution
 
-This project builds upon excellent open-source work:
+This project is a fork and evolution of [memory-lancedb-pro](https://github.com/CortexReach/memory-lancedb-pro) by CortexReach.
+
+Built upon excellent open-source work:
 
 | Dependency | License | Usage |
 |------------|---------|-------|
+| [memory-lancedb-pro](https://github.com/CortexReach/memory-lancedb-pro) | MIT | Original plugin foundation |
 | [LanceDB](https://github.com/lancedb/lancedb) | Apache 2.0 | Vector database engine |
 | [Apache Arrow](https://arrow.apache.org/) | Apache 2.0 | Columnar data format |
 | [OpenAI Node](https://github.com/openai/openai-node) | Apache 2.0 | Embedding generation |
