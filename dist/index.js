@@ -33,6 +33,7 @@ const kind = 'memory';
  */
 let _capabilityRuntime = null;
 let _eventsManager = null;
+let _initialized = false;
 /**
  * OpenClaw plugin registration.
  * Called by OpenClaw when loading the plugin.
@@ -54,6 +55,25 @@ let _eventsManager = null;
  * - registerMemoryCorpusSupplement(supplement)
  */
 function register(api) {
+    // Singleton guard: skip full initialization on subsequent calls.
+    // Re-register tools and capability (host may call per-agent), but avoid
+    // redundant config parsing, DB init, wiki supplements, CLI, and events.
+    if (_initialized) {
+        registerAllMemoryTools(api.registerTool, {
+            enableManagementTools: true,
+            enableAliases: true,
+        });
+        if (api.registerMemoryCapability && _capabilityRuntime) {
+            const primaryWorkspaceRoot = api.config?.agents?.defaults?.workspace ?? process.cwd();
+            const publicArtifactsProvider = createPublicArtifactsProvider(primaryWorkspaceRoot);
+            api.registerMemoryCapability({
+                runtime: _capabilityRuntime,
+                publicArtifacts: publicArtifactsProvider,
+            });
+        }
+        return;
+    }
+    _initialized = true;
     // Parse and validate configuration from plugin manifest (Phase 0 preserved)
     const rawConfig = api.pluginConfig;
     const config = resolveConfig(rawConfig);
@@ -80,14 +100,11 @@ function register(api) {
         enableAliases: true,
     });
     api.logger.info('[memory-lancedb-pro-v2] memory tools registered');
-    // Warm the tool context in background for faster first use.
-    void initializeToolContext({ config, backendConfig })
-        .then(() => {
-        api.logger.info('[memory-lancedb-pro-v2] tool context initialized');
-    })
-        .catch((error) => {
-        api.logger.error?.(`[memory-lancedb-pro-v2] failed to initialize tool context: ${error}`);
-    });
+    // NOTE: initializeToolContext pre-warming removed to prevent event loop
+    // starvation during gateway startup. Tools lazily init via ensureToolContextReady()
+    // on first use, which is safe and only adds latency to the first tool call.
+    // CRITICAL: Must still call initializeToolContext to register config so lazy init works.
+    void initializeToolContext({ config, backendConfig });
     const primaryWorkspaceRoot = api.config?.agents?.defaults?.workspace ?? process.cwd();
     api.logger.info(`[memory-lancedb-pro-v2] workspace root resolved: ${primaryWorkspaceRoot}`);
     // Batch B: Register wiki supplements (prompt + corpus)
