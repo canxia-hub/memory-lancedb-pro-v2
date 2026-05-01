@@ -14,6 +14,7 @@ import { createLanceDBStore } from '../store/lancedb-store.js';
 import { normalizeScope, DEFAULT_SCOPE } from '../store/scope-manager.js';
 import { createHybridRetriever } from './hybrid-retriever.js';
 import { createDefaultRerankManager } from './rerank.js';
+import { buildEmbeddingAvailability as buildDashScopeEmbeddingAvailability } from './embedder.js';
 /**
  * Map internal RetrievalCandidate to public MemorySearchResult.
  *
@@ -72,7 +73,7 @@ export function createSearchManager(config, backendConfig, externalStore // Opti
     // Create internal components
     // CRITICAL FIX: Use external store if provided to avoid data isolation
     const store = externalStore ?? createLanceDBStore(backendConfig);
-    const rerankManager = createDefaultRerankManager();
+    const rerankManager = createDefaultRerankManager(config.retrieval);
     // Internal state
     let _initialized = false;
     let _retriever = null;
@@ -82,9 +83,9 @@ export function createSearchManager(config, backendConfig, externalStore // Opti
             lexicalAvailable: true, // Phase 1: lexical always available
             vectorAvailable: vectorAvailable,
             hybridAvailable: config.retrieval.hybrid && vectorAvailable, // Hybrid needs both
-            embeddingAvailable: false, // Phase 1: embedding not integrated
-            vectorUnavailableReason: vectorAvailable ? undefined : 'Vector search requires embedding provider integration',
-            embeddingUnavailableReason: 'Embedding provider not integrated in Phase 1',
+            embeddingAvailable: buildDashScopeEmbeddingAvailability({ ...config.embedding, dimension: backendConfig.embeddingDimension }).isFunctional,
+            vectorUnavailableReason: vectorAvailable ? undefined : 'No populated vectors available',
+            embeddingUnavailableReason: buildDashScopeEmbeddingAvailability({ ...config.embedding, dimension: backendConfig.embeddingDimension }).unavailableReason,
         };
     }
     /**
@@ -97,16 +98,11 @@ export function createSearchManager(config, backendConfig, externalStore // Opti
         const vectorAvailability = await store.probeVectorAvailability();
         const retrievalAvailability = buildRetrievalAvailability(vectorAvailability.hasPopulatedVectors);
         const records = await store.list({ limit: 1000 });
-        _retriever = createHybridRetriever(records, retrievalAvailability);
+        _retriever = createHybridRetriever(records, retrievalAvailability, { ...config.embedding, dimension: backendConfig.embeddingDimension });
     }
     // Build embedding availability (honest)
     function buildEmbeddingAvailability() {
-        return {
-            hasProvider: false, // Phase 1: no embedding provider
-            isFunctional: false,
-            unavailableReason: 'Embedding provider not configured - requires capability runtime integration',
-            dimension: backendConfig.embeddingDimension, // Schema knows dimension, but provider missing
-        };
+        return buildDashScopeEmbeddingAvailability({ ...config.embedding, dimension: backendConfig.embeddingDimension });
     }
     const manager = {
         async initialize() {
@@ -119,7 +115,7 @@ export function createSearchManager(config, backendConfig, externalStore // Opti
             const retrievalAvailability = buildRetrievalAvailability(vectorAvailability.hasPopulatedVectors);
             // Get initial records for retriever (will be enhanced later)
             const records = await store.list({ limit: 1000 });
-            _retriever = createHybridRetriever(records, retrievalAvailability);
+            _retriever = createHybridRetriever(records, retrievalAvailability, { ...config.embedding, dimension: backendConfig.embeddingDimension });
             _initialized = true;
         },
         async close() {

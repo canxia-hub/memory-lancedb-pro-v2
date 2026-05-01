@@ -13,6 +13,7 @@ import { createLanceDBStore, } from '../store/lancedb-store.js';
 import { resolveMemoryBackendConfig } from '../config/resolve-backend-config.js';
 import { normalizeScope, DEFAULT_SCOPE } from '../store/scope-manager.js';
 import { getAssetStore, } from '../store/asset-store.js';
+import { embedMultimodal } from '../retrieval/embedder.js';
 /**
  * Internal store instance.
  * Lazily initialized.
@@ -134,12 +135,23 @@ export async function memoryStore(input) {
             ...(input.sourceType && { sourceType: input.sourceType }),
             ...(input.sourceRef && { sourceRef: input.sourceRef }),
         };
+        const firstImageAsset = input.assets?.find?.(asset => asset.modality === 'image' && asset.storagePath);
+        let memoryEmbedding = undefined;
+        if (_config?.embedding) {
+            try {
+                memoryEmbedding = (await embedMultimodal({ text: input.text, image: firstImageAsset?.storagePath }, { ..._config.embedding, dimension: _config.embeddingDimension ?? 2560 })).embedding;
+            }
+            catch (embeddingError) {
+                enrichedMetadata.embeddingError = embeddingError instanceof Error ? embeddingError.message : String(embeddingError);
+            }
+        }
         const recordInput = {
             content: input.text,
             scope: input.scope,
             category: input.category ?? 'other',
             importance: input.importance ?? 0.7,
             metadata: enrichedMetadata,
+            embedding: memoryEmbedding,
         };
         // Call LanceDBStore.create() - THIS IS THE CORE WORK
         const record = await _store.create(recordInput);

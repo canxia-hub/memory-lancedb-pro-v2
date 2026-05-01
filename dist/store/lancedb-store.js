@@ -8,6 +8,7 @@ import { normalizeScope, DEFAULT_SCOPE } from './scope-manager.js';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, accessSync, constants, lstatSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { embedMultimodal } from '../retrieval/embedder.js';
 // LanceDB dynamic import
 // Use createRequire for ESM compatibility with CommonJS modules
 const require = createRequire(import.meta.url);
@@ -263,7 +264,7 @@ export function createLanceDBStore(config) {
                 id,
                 scope,
                 content: input.content,
-                embedding: Array.from({ length: config.embeddingDimension }).fill(0),
+                embedding: input.embedding ?? (config.embedding ? (await embedMultimodal({ text: input.content }, { ...config.embedding, dimension: config.embeddingDimension })).embedding : Array.from({ length: config.embeddingDimension }).fill(0)),
                 category: input.category ?? 'other',
                 importance: input.importance ?? 0.7,
                 createdAt: now,

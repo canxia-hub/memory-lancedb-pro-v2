@@ -22,6 +22,9 @@
   "openclaw": {
     "extensions": [
       "./dist/index.js"
+    ],
+    "runtimeExtensions": [
+      "./dist/index.js"
     ]
   },
   "files": [
@@ -36,5 +39,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.4.27"
   }
 }

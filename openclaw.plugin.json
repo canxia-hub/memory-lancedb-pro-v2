@@ -13,7 +13,10 @@
       },
       "connectionMode": {
         "type": "string",
-        "enum": ["embedded", "remote"],
+        "enum": [
+          "embedded",
+          "remote"
+        ],
         "default": "embedded",
         "description": "Connection mode: embedded (local) or remote (server)"
       },
@@ -35,15 +38,51 @@
       "retrieval": {
         "type": "object",
         "properties": {
-          "hybrid": { "type": "boolean", "default": true },
-          "rerank": { "type": "boolean", "default": false }
+          "hybrid": {
+            "type": "boolean",
+            "default": true
+          },
+          "rerank": {
+            "type": "boolean",
+            "default": false
+          },
+          "rerankProvider": {
+            "type": "string",
+            "enum": [
+              "none",
+              "dashscope"
+            ],
+            "default": "none",
+            "description": "Rerank provider"
+          },
+          "rerankModel": {
+            "type": "string",
+            "default": "qwen3-vl-rerank",
+            "description": "Rerank model name"
+          },
+          "rerankBaseUrl": {
+            "type": "string",
+            "default": "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank",
+            "description": "DashScope rerank endpoint"
+          },
+          "rerankApiKeyEnv": {
+            "type": "string",
+            "default": "DASHSCOPE_API_KEY",
+            "description": "Environment variable containing DashScope API key"
+          }
         }
       },
       "hostInterop": {
         "type": "object",
         "properties": {
-          "enableArtifacts": { "type": "boolean", "default": true },
-          "enableEvents": { "type": "boolean", "default": true }
+          "enableArtifacts": {
+            "type": "boolean",
+            "default": true
+          },
+          "enableEvents": {
+            "type": "boolean",
+            "default": true
+          }
         }
       },
       "assetsTableName": {
@@ -57,22 +96,76 @@
       "vault": {
         "type": "object",
         "properties": {
-          "path": { "type": "string", "description": "Wiki vault path" }
+          "path": {
+            "type": "string",
+            "description": "Wiki vault path"
+          }
         }
       },
       "context": {
         "type": "object",
         "properties": {
-          "includeCompiledDigestPrompt": { "type": "boolean", "default": false }
+          "includeCompiledDigestPrompt": {
+            "type": "boolean",
+            "default": false
+          }
         }
       },
       "obsidian": {
         "type": "object",
         "properties": {
-          "enabled": { "type": "boolean", "default": false }
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      },
+      "embedding": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string",
+            "default": "dashscope"
+          },
+          "model": {
+            "type": "string",
+            "description": "Embedding model name; qwen3-vl-rerank is not an embedding model",
+            "default": "tongyi-embedding-vision-flash-2026-03-06"
+          },
+          "baseUrl": {
+            "type": "string",
+            "default": "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding"
+          },
+          "apiKeyEnv": {
+            "type": "string",
+            "default": "DASHSCOPE_API_KEY"
+          },
+          "nativeDimension": {
+            "type": "integer",
+            "default": 768,
+            "description": "Native model vector dimension before storage padding"
+          },
+          "storageDimension": {
+            "type": "integer",
+            "default": 2560,
+            "description": "Padded storage vector dimension for existing LanceDB table compatibility"
+          }
         }
       }
     },
-    "required": ["dbPath"]
-  }
+    "required": [
+      "dbPath"
+    ]
+  },
+  "activation": {
+    "onStartup": true,
+    "onCommands": [
+      "wiki"
+    ]
+  },
+  "commandAliases": [
+    {
+      "name": "wiki"
+    }
+  ]
 }
