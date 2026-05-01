@@ -7,6 +7,16 @@
  *
  * Tools registered via registerAllMemoryTools.
  */
+function definePluginEntry(entry) {
+    return {
+        configSchema: {
+            type: 'object',
+            additionalProperties: true,
+            properties: {},
+        },
+        ...entry,
+    };
+}
 import { resolveConfig } from './config/resolve-config.js';
 import { resolveMemoryBackendConfig } from './config/resolve-backend-config.js';
 // Tool registration
@@ -27,12 +37,18 @@ const id = 'memory-lancedb-pro-v2';
 const name = 'memory-lancedb-pro-v2';
 const description = 'Capability-first LanceDB memory plugin with wiki graph tools and host interop';
 const kind = 'memory';
+const configSchema = {
+    type: 'object',
+    additionalProperties: true,
+    properties: {},
+};
 /**
  * Internal state for capability runtime.
  * Initialized during register() call.
  */
 let _capabilityRuntime = null;
 let _eventsManager = null;
+let _promptBuilder = null;
 let _initialized = false;
 /**
  * OpenClaw plugin registration.
@@ -69,6 +85,7 @@ function register(api) {
             api.registerMemoryCapability({
                 runtime: _capabilityRuntime,
                 publicArtifacts: publicArtifactsProvider,
+                promptBuilder: _promptBuilder ?? undefined,
             });
         }
         return;
@@ -110,15 +127,16 @@ function register(api) {
     // Batch B: Register wiki supplements (prompt + corpus)
     // Honest degradation: if host API doesn't support, log and continue
     try {
-        // Register prompt supplement
+        // Build prompt section once for the modern memory capability path.
+        // registerMemoryPromptSupplement remains as a legacy/compatibility side registration.
+        _promptBuilder = createWikiPromptSectionBuilder(config);
         if (api.registerMemoryPromptSupplement) {
-            const promptBuilder = createWikiPromptSectionBuilder(config);
-            api.registerMemoryPromptSupplement(promptBuilder);
+            api.registerMemoryPromptSupplement(_promptBuilder);
             api.logger.info('[memory-lancedb-pro-v2] wiki prompt supplement registered');
             api.logger.info(`  - includeCompiledDigestPrompt: ${config.context?.includeCompiledDigestPrompt ?? false}`);
         }
         else {
-            api.logger.warn?.('[memory-lancedb-pro-v2] host API does not support registerMemoryPromptSupplement');
+            api.logger.warn?.('[memory-lancedb-pro-v2] host API does not support registerMemoryPromptSupplement; using memory capability promptBuilder');
         }
         // Register corpus supplement
         if (api.registerMemoryCorpusSupplement) {
@@ -170,6 +188,7 @@ function register(api) {
             api.registerMemoryCapability({
                 runtime: _capabilityRuntime,
                 publicArtifacts: publicArtifactsProvider,
+                promptBuilder: _promptBuilder ?? undefined,
             });
             api.logger.info('[memory-lancedb-pro-v2] memory capability registered with host');
             api.logger.info('  - runtime: includes getMemorySearchManager() + resolveMemoryBackendConfig()');
@@ -223,13 +242,14 @@ function getEvents() {
 /**
  * OpenClaw plugin export
  */
-export default {
+export default definePluginEntry({
     id,
     name,
     description,
     kind,
+    configSchema,
     register,
-};
+});
 /**
  * Export config types for external consumers (optional)
  */

@@ -18,6 +18,10 @@ export const DEFAULT_CONFIG = {
     retrieval: {
         hybrid: true,
         rerank: false,
+        rerankProvider: 'none',
+        rerankModel: 'qwen3-vl-rerank',
+        rerankBaseUrl: 'https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank',
+        rerankApiKeyEnv: 'DASHSCOPE_API_KEY',
     },
     hostInterop: {
         enableArtifacts: true,
@@ -31,6 +35,14 @@ export const DEFAULT_CONFIG = {
     },
     obsidian: {
         enabled: false,
+    },
+    embedding: {
+        provider: 'dashscope',
+        model: 'tongyi-embedding-vision-flash-2026-03-06',
+        baseUrl: 'https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding',
+        apiKeyEnv: 'DASHSCOPE_API_KEY',
+        nativeDimension: 768,
+        storageDimension: 2560,
     },
 };
 /**

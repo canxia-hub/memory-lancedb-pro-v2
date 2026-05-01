@@ -55,6 +55,7 @@ declare function register(api: {
     registerMemoryCapability?: (params: {
         runtime: unknown;
         publicArtifacts: unknown;
+        promptBuilder?: MemoryPromptSectionBuilder;
     }) => void;
     registerMemoryPromptSupplement?: (builder: MemoryPromptSectionBuilder) => void;
     registerMemoryCorpusSupplement?: (supplement: WikiCorpusSupplement) => void;
@@ -88,6 +89,11 @@ declare const _default: {
     name: string;
     description: string;
     kind: string;
+    configSchema: {
+        type: string;
+        additionalProperties: boolean;
+        properties: Record<string, unknown>;
+    };
     register: typeof register;
 };
 export default _default;

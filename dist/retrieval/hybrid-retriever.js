@@ -10,6 +10,7 @@
  * Internal candidates must be mapped to public MemorySearchResult before export.
  */
 import { buildMemoryPath } from '../store/scope-manager.js';
+import { embedMultimodal, cosineSimilarity, isZeroVector } from './embedder.js';
 /**
  * Simple lexical search implementation.
  *
@@ -99,7 +100,7 @@ export function truncateSnippet(content, maxLength = 180) {
  * @param availability - Retrieval availability status
  * @returns Hybrid retriever instance
  */
-export function createHybridRetriever(records, availability) {
+export function createHybridRetriever(records, availability, embeddingConfig = {}) {
     const retriever = {
         async retrieve(options) {
             switch (options.mode) {
@@ -139,18 +140,47 @@ export function createHybridRetriever(records, availability) {
             return simpleLexicalSearch(query, filteredRecords, options);
         },
         async vectorSearch(query, options) {
-            // Phase 1 placeholder: vector search requires embedding
-            // Honest: return empty when embedding not available
-            if (!availability.vectorAvailable) {
-                // Vector search unavailable - return empty, not fake results
+            if (!availability.vectorAvailable || !availability.embeddingAvailable) {
                 return [];
             }
-            // When vector search is implemented:
-            // 1. Get embedding for query
-            // 2. Search LanceDB with vector
-            // 3. Return candidates with vectorScore
-            // Placeholder: return empty (honest about unavailability)
-            return [];
+            let queryEmbedding;
+            try {
+                queryEmbedding = (await embedMultimodal({ text: query }, embeddingConfig)).embedding;
+            }
+            catch (_err) {
+                return [];
+            }
+            let filteredRecords = records;
+            if (options?.scope) {
+                filteredRecords = filteredRecords.filter(r => r.scope === options.scope);
+            }
+            if (options?.category) {
+                filteredRecords = filteredRecords.filter(r => r.category === options.category);
+            }
+            const limit = options?.limit ?? 20;
+            const minScore = options?.minScore ?? 0.1;
+            return filteredRecords
+                .filter(record => Array.isArray(record.embedding) && !isZeroVector(record.embedding))
+                .map(record => {
+                const vectorScore = cosineSimilarity(queryEmbedding, record.embedding ?? []);
+                return {
+                    id: record.id,
+                    scope: record.scope,
+                    path: buildMemoryPath(record.scope, record.id),
+                    vectorScore,
+                    finalScore: vectorScore,
+                    snippet: truncateSnippet(record.content, 180),
+                    content: record.content,
+                    category: record.category,
+                    importance: record.importance,
+                    createdAt: record.createdAt,
+                    updatedAt: record.updatedAt,
+                    metadata: record.metadata,
+                };
+            })
+                .filter(c => c.vectorScore >= minScore)
+                .sort((a, b) => (b.vectorScore ?? 0) - (a.vectorScore ?? 0))
+                .slice(0, limit);
         },
         combineResults(lexical, vector, options) {
             const lexicalWeight = options?.lexicalWeight ?? 0.5;

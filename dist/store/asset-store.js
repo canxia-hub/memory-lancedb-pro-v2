@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, accessSync, constants, lstatSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
+import { embedMultimodal } from '../retrieval/embedder.js';
 // LanceDB dynamic import
 const require = createRequire(import.meta.url);
 let lancedbModule = null;
@@ -81,6 +82,7 @@ export function resolveAssetStoreConfig(backendConfig) {
         dbPath: backendConfig.dbPath,
         tableName: 'memory_assets',
         embeddingDimension: backendConfig.embeddingDimension,
+        embedding: backendConfig.embedding,
     };
 }
 /**
@@ -240,7 +242,8 @@ export function createAssetStore(config) {
             await ensureInitialized();
             const assetId = generateId();
             const createdAt = timestamp();
-            const row = mapInputToRow(memoryId, input, assetId, createdAt);
+            const enrichedInput = input.embedding ? input : { ...input, embedding: config.embedding ? (await embedMultimodal({ text: input.caption ?? input.summary ?? input.ocrText, image: input.storagePath }, { ...config.embedding, dimension: config.embeddingDimension })).embedding : undefined };
+            const row = mapInputToRow(memoryId, enrichedInput, assetId, createdAt);
             try {
                 await _table.add([row]);
             }
@@ -265,7 +268,8 @@ export function createAssetStore(config) {
             for (let i = 0; i < inputs.length; i++) {
                 const input = inputs[i];
                 const assetId = generateId();
-                rows.push(mapInputToRow(memoryId, input, assetId, createdAt));
+                const enrichedInput = input.embedding ? input : { ...input, embedding: config.embedding ? (await embedMultimodal({ text: input.caption ?? input.summary ?? input.ocrText, image: input.storagePath }, { ...config.embedding, dimension: config.embeddingDimension })).embedding : undefined };
+                rows.push(mapInputToRow(memoryId, enrichedInput, assetId, createdAt));
             }
             // Batch insert
             try {

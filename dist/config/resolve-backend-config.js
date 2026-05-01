@@ -28,6 +28,7 @@ export function resolveMemoryBackendConfig(config) {
         connectionMode,
         tableName,
         embeddingDimension,
+        embedding: config.embedding,
     };
 }
 //# sourceMappingURL=resolve-backend-config.js.map

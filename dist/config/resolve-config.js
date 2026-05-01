@@ -21,6 +21,10 @@ export function resolveConfig(input) {
     const retrieval = {
         hybrid: input.retrieval?.hybrid ?? DEFAULT_CONFIG.retrieval.hybrid,
         rerank: input.retrieval?.rerank ?? DEFAULT_CONFIG.retrieval.rerank,
+        rerankProvider: input.retrieval?.rerankProvider ?? DEFAULT_CONFIG.retrieval.rerankProvider,
+        rerankModel: input.retrieval?.rerankModel ?? DEFAULT_CONFIG.retrieval.rerankModel,
+        rerankBaseUrl: input.retrieval?.rerankBaseUrl ?? DEFAULT_CONFIG.retrieval.rerankBaseUrl,
+        rerankApiKeyEnv: input.retrieval?.rerankApiKeyEnv ?? DEFAULT_CONFIG.retrieval.rerankApiKeyEnv,
     };
     // Resolve host interop config with defaults
     const hostInterop = {
@@ -55,6 +59,7 @@ export function resolveConfig(input) {
         vault,
         context,
         obsidian,
+        embedding: { ...(DEFAULT_CONFIG.embedding ?? {}), ...(input.embedding ?? {}) },
     };
     return config;
 }
