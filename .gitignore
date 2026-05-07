@@ -1,0 +1,7 @@
+node_modules/
+dist/**/*.map
+*.tsbuildinfo
+.env
+.env.*
+test-data/
+*.log

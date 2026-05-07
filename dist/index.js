@@ -1,0 +1,200 @@
+/**
+ * memory-lancedb-pro v3 Plugin Entry
+ *
+ * v3 changelog (from v2.0.0):
+ * - Uses SDK definePluginEntry from openclaw/plugin-sdk/plugin-entry
+ * - OpenClawPluginApi type for type-safe register(api)
+ * - peerDeps: >=2026.5.6
+ * - hooks.timeoutMs: 60000 in manifest
+ * - contracts.tools declared in openclaw.plugin.json (17 tools)
+ * - Phase 2: Type-safe tool types in src/tools/types.ts
+ *
+ * All business logic preserved from v2.
+ */
+import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
+
+import { resolveConfig } from './config/resolve-config.js';
+import { resolveMemoryBackendConfig } from './config/resolve-backend-config.js';
+
+// Tool registration
+import { registerAllMemoryTools, initializeToolContext } from './tools/register.js';
+
+// Interop imports
+import { createMemoryCapabilityRuntime } from './interop/memory-capability.js';
+import { createPublicArtifactsProvider } from './interop/public-artifacts.js';
+import { createHostEventsManager } from './interop/host-events.js';
+
+// Wiki supplement imports
+import { createWikiCorpusSupplement, createWikiPromptSectionBuilder } from './wiki/wiki-supplement.js';
+
+// Wiki CLI registration
+import { registerWikiCli } from './wiki/wiki-command.js';
+
+// Phase 3: Plugin state persistence (openKeyedStore)
+import { initPluginState, setStats, isStateActive } from './state/plugin-state.js';
+
+/**
+ * Plugin metadata
+ */
+const id = 'memory-lancedb-pro';
+const name = 'Memory LanceDB Pro';
+const description = 'Capability-first LanceDB memory plugin with hybrid retrieval, wiki tools, and host interop (v3)';
+
+/**
+ * Internal state for capability runtime.
+ */
+let _capabilityRuntime = null;
+let _eventsManager = null;
+let _promptBuilder = null;
+let _initialized = false;
+
+/**
+ * OpenClaw plugin registration.
+ */
+function register(api) {
+    if (_initialized) {
+        registerAllMemoryTools(api.registerTool, {
+            enableManagementTools: true,
+            enableAliases: true,
+        });
+        if (api.registerMemoryCapability && _capabilityRuntime) {
+            const primaryWorkspaceRoot = api.config?.agents?.defaults?.workspace ?? process.cwd();
+            const publicArtifactsProvider = createPublicArtifactsProvider(primaryWorkspaceRoot);
+            api.registerMemoryCapability({
+                runtime: _capabilityRuntime,
+                publicArtifacts: publicArtifactsProvider,
+                promptBuilder: _promptBuilder ?? undefined,
+            });
+        }
+        return;
+    }
+    _initialized = true;
+
+    const rawConfig = api.pluginConfig;
+    const config = resolveConfig(rawConfig);
+    const backendConfig = resolveMemoryBackendConfig(config);
+
+    api.logger.info('[memory-lancedb-pro] capability-ready (v3 / Phase 2)');
+    api.logger.info(`  dbPath: ${backendConfig.dbPath}`);
+    api.logger.info(`  connectionMode: ${backendConfig.connectionMode}`);
+    api.logger.info(`  tableName: ${backendConfig.tableName}`);
+    api.logger.info(`  embeddingDimension: ${backendConfig.embeddingDimension}`);
+    api.logger.info(`  retrieval.hybrid: ${config.retrieval.hybrid}`);
+    api.logger.info(`  retrieval.rerank: ${config.retrieval.rerank}`);
+    api.logger.info(`  hostInterop.enableArtifacts: ${config.hostInterop.enableArtifacts}`);
+    api.logger.info(`  hostInterop.enableEvents: ${config.hostInterop.enableEvents}`);
+    api.logger.info(`  vault.path: ${config.vault?.path ?? 'default'}`);
+
+    registerAllMemoryTools(api.registerTool, {
+        enableManagementTools: true,
+        enableAliases: true,
+    });
+    api.logger.info('[memory-lancedb-pro] memory tools registered');
+
+    void initializeToolContext({ config, backendConfig });
+    const primaryWorkspaceRoot = api.config?.agents?.defaults?.workspace ?? process.cwd();
+    api.logger.info(`[memory-lancedb-pro] workspace root resolved: ${primaryWorkspaceRoot}`);
+
+    // Wiki supplements
+    try {
+        _promptBuilder = createWikiPromptSectionBuilder(config);
+        if (api.registerMemoryPromptSupplement) {
+            api.registerMemoryPromptSupplement(_promptBuilder);
+            api.logger.info('[memory-lancedb-pro] wiki prompt supplement registered');
+        }
+        if (api.registerMemoryCorpusSupplement) {
+            const corpusSupplement = createWikiCorpusSupplement({ config, appConfig: api.config });
+            api.registerMemoryCorpusSupplement(corpusSupplement);
+            api.logger.info('[memory-lancedb-pro] wiki corpus supplement registered');
+        }
+    } catch (error) {
+        api.logger.error?.(`[memory-lancedb-pro] failed to register wiki supplements: ${error}`);
+    }
+
+    // Wiki CLI
+    if (api.registerCli) {
+        try {
+            api.registerCli(({ program }) => {
+                registerWikiCli(program, config, api.config);
+            }, {
+                descriptors: [{
+                    name: 'wiki',
+                    description: 'Inspect and initialize the memory wiki vault',
+                    hasSubcommands: true,
+                }],
+            });
+            api.logger.info('[memory-lancedb-pro] wiki CLI registered');
+        } catch (error) {
+            api.logger.error?.(`[memory-lancedb-pro] failed to register wiki CLI: ${error}`);
+        }
+    }
+
+    // Capability runtime
+    try {
+        _capabilityRuntime = createMemoryCapabilityRuntime({ config });
+        api.logger.info('[memory-lancedb-pro] capability runtime created');
+        if (api.registerMemoryCapability) {
+            const publicArtifactsProvider = createPublicArtifactsProvider(primaryWorkspaceRoot);
+            api.registerMemoryCapability({
+                runtime: _capabilityRuntime,
+                publicArtifacts: publicArtifactsProvider,
+                promptBuilder: _promptBuilder ?? undefined,
+            });
+            api.logger.info('[memory-lancedb-pro] memory capability registered with host');
+        }
+    } catch (error) {
+        api.logger.error?.(`[memory-lancedb-pro] failed to create capability runtime: ${error}`);
+        _capabilityRuntime = null;
+    }
+
+    // Host events
+    if (config.hostInterop.enableEvents) {
+        try {
+            _eventsManager = createHostEventsManager({ eventsDir: `${primaryWorkspaceRoot}/memory/events` });
+            api.logger.info('[memory-lancedb-pro] host events manager created');
+        } catch (error) {
+            api.logger.error?.(`[memory-lancedb-pro] failed to create events manager: ${error}`);
+            _eventsManager = null;
+        }
+    }
+
+    api.logger.info(`[memory-lancedb-pro] interop status: ${JSON.stringify({
+        capability: _capabilityRuntime !== null,
+        events: _eventsManager !== null,
+        vaultRoot: primaryWorkspaceRoot,
+    })}`);
+
+    // Phase 3: Initialize persistent state (fire-and-forget, non-blocking)
+    void initPluginState(api).then((stateOk) => {
+        if (stateOk) {
+            api.logger.info('[memory-lancedb-pro] state store active (openKeyedStore)');
+            void setStats({
+                dbPath: backendConfig.dbPath,
+                tableName: backendConfig.tableName,
+                connectionMode: backendConfig.connectionMode,
+                embeddingDimension: backendConfig.embeddingDimension,
+                registeredAt: Date.now(),
+            });
+        }
+    }).catch((error) => {
+        api.logger.warn?.(`[memory-lancedb-pro] state store unavailable: ${error.message}`);
+    });
+}
+
+function getCapability() { return _capabilityRuntime; }
+function getEvents() { return _eventsManager; }
+
+export default definePluginEntry({ id, name, description, register });
+
+// ── Exports (preserved from v2) ──
+export { DEFAULT_CONFIG } from './config/schema.js';
+export { resolveConfig } from './config/resolve-config.js';
+export { resolveMemoryBackendConfig } from './config/resolve-backend-config.js';
+export { resolveAssetStoreConfig, createAssetStore, initializeAssetStore, getAssetStore, closeAssetStore } from './store/asset-store.js';
+export { CURRENT_SCHEMA_VERSION, LATEST_SCHEMA_VERSION, MIGRATION_CAPABILITIES, createMigrationManager, createLegacyMigrationManager, createLegacyMigrator } from './store/migrations.js';
+export { LegacyMigrator, findLegacyDatabase, readLegacyEntries, mapLegacyToV2, migrateFromLegacy } from './migration/index.js';
+export { createMemoryCapabilityRuntime, getMemoryCapabilityRuntime, getMemorySearchManager, resolveBackendConfigForCapability, createAndInitializeMemoryCapability } from './interop/memory-capability.js';
+export { ARTIFACT_PATHS, listPublicArtifacts, hasStandardArtifacts, getArtifactContent, createPublicArtifactsProvider } from './interop/public-artifacts.js';
+export { ALLOWED_EVENT_TYPES, isValidEventType, createHostEventsManager, createRecallRecordedEvent, createPromotionAppliedEvent } from './interop/host-events.js';
+export { getCapability, getEvents };
+export * from './wiki/index.js';

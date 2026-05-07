@@ -1,0 +1,55 @@
+{
+  "name": "memory-lancedb-pro",
+  "version": "3.0.0",
+  "type": "module",
+  "description": "Capability-first LanceDB memory plugin for OpenClaw with hybrid retrieval, wiki tools, and host interop (v3)",
+  "main": "dist/index.js",
+  "keywords": [
+    "openclaw",
+    "memory",
+    "lancedb",
+    "vector",
+    "retrieval",
+    "wiki"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openclaw/memory-lancedb-pro"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "openclaw": {
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "runtimeExtensions": [
+      "./dist/index.js"
+    ],
+    "install": {
+      "npmSpec": "@openclaw/memory-lancedb-pro",
+      "localPath": "extensions/memory-lancedb-pro",
+      "defaultChoice": "npm"
+    }
+  },
+  "files": [
+    "dist/",
+    "src/"
+  ],
+  "dependencies": {
+    "@lancedb/lancedb": "^0.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.6"
+  }
+}
