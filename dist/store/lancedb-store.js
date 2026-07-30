@@ -2,7 +2,12 @@
  * LanceDB Store - Real Persistent Implementation
  *
  * Real LanceDB persistence with file-based storage.
- * Replaces Phase 1 in-memory fallback with true database operations.
+ * Upgraded to @lancedb/lancedb 0.33.0 with:
+ * - readConsistencyInterval for cross-process visibility
+ * - mergeInsert for atomic upsert (replaces delete+add)
+ * - FTS full-text search index on content column
+ * - cosine native vector search via distanceType
+ * - BITMAP scalar indexes on scope/category columns
  */
 import { normalizeScope, DEFAULT_SCOPE } from './scope-manager.js';
 import { randomUUID } from 'node:crypto';
@@ -15,7 +20,11 @@ const require = createRequire(import.meta.url);
 let lancedbModule = null;
 async function loadLanceDB() {
     if (!lancedbModule) {
-        // Use require() via createRequire for ESM compatibility
+        // Exclude network section from process.report to avoid slow reverse-DNS
+        // lookups on first LanceDB load (can block event loop 100-250s on some hosts)
+        try {
+            process.report.excludeNetwork = true;
+        } catch { /* Node < 22 without the flag */ }
         lancedbModule = require('@lancedb/lancedb');
     }
     return lancedbModule;
@@ -65,10 +74,11 @@ function validateStoragePath(dbPath) {
     }
     return resolvedPath;
 }
+
 /**
  * Create LanceDB store instance.
  *
- * Real LanceDB persistence implementation.
+ * Real LanceDB persistence implementation with 0.33.0 features.
  *
  * @param config - Backend configuration
  * @returns Store instance
@@ -80,6 +90,9 @@ export function createLanceDBStore(config) {
     let _table = null; // LanceDB Table
     let _initPromise = null;
     let _updateQueue = Promise.resolve(); // Serialize updates
+    let _ftsIndexCreated = false; // Track FTS index state
+    let _lastFtsError = null; // Last FTS error for diagnostics
+
     // Generate UUID
     function generateId() {
         return randomUUID();
@@ -92,6 +105,13 @@ export function createLanceDBStore(config) {
     function resolveScope(scope) {
         return normalizeScope(scope, config.tableName === 'memories' ? DEFAULT_SCOPE : undefined);
     }
+
+    // Check if FTS is enabled in config
+    function isFtsEnabled() {
+        // Default: enabled for memories table, can be disabled via retrieval.fts: false
+        return config.retrieval?.fts !== false;
+    }
+
     // Ensure initialization (singleton pattern)
     async function ensureInitialized() {
         if (_table)
@@ -104,17 +124,24 @@ export function createLanceDBStore(config) {
         });
         return _initPromise;
     }
+
     // Real LanceDB initialization
     async function doInitialize() {
         const lancedb = await loadLanceDB();
         const resolvedPath = validateStoragePath(config.dbPath);
+
+        // 0.33: connect with readConsistencyInterval for cross-process visibility
+        const readConsistencyInterval = config.readConsistencyIntervalSeconds ?? 5;
         let db;
         try {
-            db = await lancedb.connect(resolvedPath);
+            db = await lancedb.connect(resolvedPath, {
+                readConsistencyInterval,
+            });
         }
         catch (err) {
             throw new Error(`Failed to open LanceDB at "${resolvedPath}": ${err.code || ''} ${err.message}`);
         }
+
         let table;
         // Try to open existing table, create if missing
         try {
@@ -147,6 +174,7 @@ export function createLanceDBStore(config) {
                 }
             }
         }
+
         // Validate vector dimensions
         const sample = await table.query().limit(1).toArray();
         if (sample.length > 0 && sample[0]?.embedding?.length) {
@@ -155,10 +183,79 @@ export function createLanceDBStore(config) {
                 throw new Error(`Vector dimension mismatch: table=${existingDim}, config=${config.embeddingDimension}. Create a new table/dbPath or set matching embedding.dimensions.`);
             }
         }
+
+        // Create scalar indexes (BITMAP) on scope and category columns
+        // These are low-cardinality columns ideal for BITMAP indexes
+        await createScalarIndexes(lancedb, table);
+
+        // Create FTS index on content column (graceful fallback if unavailable)
+        if (isFtsEnabled() && config.tableName === 'memories') {
+            await createFtsIndex(lancedb, table);
+        }
+
         _db = db;
         _table = table;
         _connected = true;
     }
+
+    // Create BITMAP indexes on scope and category columns
+    async function createScalarIndexes(lancedb, table) {
+        try {
+            const indices = await table.listIndices();
+            const existingColumns = new Set();
+            for (const idx of indices) {
+                if (idx.columns) {
+                    for (const col of idx.columns) existingColumns.add(col);
+                }
+            }
+
+            // BITMAP on scope (low cardinality)
+            if (!existingColumns.has('scope')) {
+                try {
+                    await table.createIndex('scope', { config: lancedb.Index.bitmap() });
+                } catch (e) {
+                    // May fail if data is too small or column type incompatible; non-critical
+                    console.warn(`[memory-lancedb-pro] BITMAP index on 'scope' skipped: ${e.message?.slice(0, 100)}`);
+                }
+            }
+
+            // BITMAP on category (low cardinality)
+            if (!existingColumns.has('category')) {
+                try {
+                    await table.createIndex('category', { config: lancedb.Index.bitmap() });
+                } catch (e) {
+                    console.warn(`[memory-lancedb-pro] BITMAP index on 'category' skipped: ${e.message?.slice(0, 100)}`);
+                }
+            }
+        } catch (e) {
+            // listIndices may fail on very old tables; non-critical
+            console.warn(`[memory-lancedb-pro] Scalar index setup skipped: ${e.message?.slice(0, 100)}`);
+        }
+    }
+
+    // Create FTS index on content column with graceful fallback
+    async function createFtsIndex(lancedb, table) {
+        try {
+            const indices = await table.listIndices();
+            // Check if FTS index already exists on content column
+            const hasFts = indices.some(idx =>
+                idx.indexType === 'FTS' ||
+                (idx.columns && idx.columns.includes('content'))
+            );
+            if (!hasFts) {
+                await table.createIndex('content', {
+                    config: lancedb.Index.fts({ withPosition: true }),
+                });
+            }
+            _ftsIndexCreated = true;
+            _lastFtsError = null;
+        } catch (err) {
+            _ftsIndexCreated = false;
+            _lastFtsError = err instanceof Error ? err.message : String(err);
+            console.warn(`[memory-lancedb-pro] FTS index creation failed, falling back to vector-only search: ${_lastFtsError?.slice(0, 150)}`);
+        }
+    }
+
     // Serialize updates to avoid delete+add race
     async function runSerializedUpdate(action) {
         const previous = _updateQueue;
@@ -175,6 +272,7 @@ export function createLanceDBStore(config) {
             release?.();
         }
     }
+
     // Probe vector availability (real implementation)
     async function probeVectors() {
         if (!_table) {
@@ -216,6 +314,7 @@ export function createLanceDBStore(config) {
             };
         }
     }
+
     // Map raw row to MemoryRecord
     function mapRowToRecord(row) {
         const embedding = row.embedding ? Array.from(row.embedding) : null;
@@ -243,6 +342,7 @@ export function createLanceDBStore(config) {
             metadata,
         };
     }
+
     // Store implementation
     const store = {
         async initialize() {
@@ -253,6 +353,7 @@ export function createLanceDBStore(config) {
             _db = null;
             _table = null;
             _initPromise = null;
+            _ftsIndexCreated = false;
         },
         async create(input) {
             await ensureInitialized();
@@ -282,12 +383,14 @@ export function createLanceDBStore(config) {
         async get(id, scope) {
             await ensureInitialized();
             const safeId = escapeSqlLiteral(id);
-            let query = _table.query().where(`id = '${safeId}'`).limit(1);
+            // 0.30+: multiple where() calls are AND-combined (correct behavior)
+            // Build a single combined predicate for clarity and correctness
+            let predicate = `id = '${safeId}'`;
             if (scope) {
                 const resolvedScope = resolveScope(scope);
-                query = query.where(`scope = '${escapeSqlLiteral(resolvedScope)}'`);
+                predicate += ` AND scope = '${escapeSqlLiteral(resolvedScope)}'`;
             }
-            const rows = await query.toArray();
+            const rows = await _table.query().where(predicate).limit(1).toArray();
             if (rows.length === 0)
                 return null;
             return mapRowToRecord(rows[0]);
@@ -297,12 +400,12 @@ export function createLanceDBStore(config) {
             return runSerializedUpdate(async () => {
                 // Get existing record
                 const safeId = escapeSqlLiteral(id);
-                let query = _table.query().where(`id = '${safeId}'`).limit(1);
+                let predicate = `id = '${safeId}'`;
                 if (scope) {
                     const resolvedScope = resolveScope(scope);
-                    query = query.where(`scope = '${escapeSqlLiteral(resolvedScope)}'`);
+                    predicate += ` AND scope = '${escapeSqlLiteral(resolvedScope)}'`;
                 }
-                const rows = await query.toArray();
+                const rows = await _table.query().where(predicate).limit(1).toArray();
                 if (rows.length === 0)
                     return null;
                 const existing = mapRowToRecord(rows[0]);
@@ -319,23 +422,40 @@ export function createLanceDBStore(config) {
                     updatedAt: now,
                     metadata: JSON.stringify(updates.metadata ?? existing.metadata),
                 };
-                // LanceDB doesn't support in-place update, use delete+add
-                // Best-effort rollback on failure
+                // 0.33: Use mergeInsert for atomic upsert (replaces delete+add)
+                // mergeInsert on 'id' key: when matched → update all, when not matched → insert
                 try {
-                    await _table.delete(`id = '${safeId}'`);
-                    await _table.add([updatedRow]);
-                }
-                catch (addError) {
-                    // Attempt rollback
-                    try {
-                        await _table.add([mapRowToRecord(rows[0])]);
+                    const mergeResult = await _table
+                        .mergeInsert('id')
+                        .whenMatchedUpdateAll()
+                        .whenNotMatchedInsertAll()
+                        .execute([updatedRow]);
+                    // Verify the update was applied
+                    if (mergeResult.numUpdatedRows === 0 && mergeResult.numInsertedRows > 0) {
+                        // This shouldn't happen since we verified the row exists above,
+                        // but handle gracefully
+                        console.warn(`[memory-lancedb-pro] mergeInsert inserted instead of updated for id=${id}`);
                     }
-                    catch (rollbackError) {
-                        throw new Error(`Update failed for ${id}: write failed after delete, and rollback also failed. ` +
+                }
+                catch (mergeErr) {
+                    // Fallback to delete+add if mergeInsert fails (e.g. on old tables without primary key)
+                    console.warn(`[memory-lancedb-pro] mergeInsert failed, falling back to delete+add: ${mergeErr.message?.slice(0, 100)}`);
+                    try {
+                        await _table.delete(`id = '${safeId}'`);
+                        await _table.add([updatedRow]);
+                    }
+                    catch (addError) {
+                        // Attempt rollback
+                        try {
+                            await _table.add([mapRowToRecord(rows[0])]);
+                        }
+                        catch (rollbackError) {
+                            throw new Error(`Update failed for ${id}: write failed after delete, and rollback also failed. ` +
+                                `Error: ${addError instanceof Error ? addError.message : String(addError)}`);
+                        }
+                        throw new Error(`Update failed for ${id}: write failed after delete, original restored. ` +
                             `Error: ${addError instanceof Error ? addError.message : String(addError)}`);
                     }
-                    throw new Error(`Update failed for ${id}: write failed after delete, original restored. ` +
-                        `Error: ${addError instanceof Error ? addError.message : String(addError)}`);
                 }
                 return mapRowToRecord(updatedRow);
             });
@@ -343,22 +463,28 @@ export function createLanceDBStore(config) {
         async delete(id, scope) {
             await ensureInitialized();
             const safeId = escapeSqlLiteral(id);
-            // Note: Don't use select() to avoid LanceDB column name case issues
-            let query = _table.query().where(`id = '${safeId}'`).limit(1);
+            // Build combined predicate for AND semantics
+            let predicate = `id = '${safeId}'`;
             if (scope) {
                 const resolvedScope = resolveScope(scope);
-                query = query.where(`scope = '${escapeSqlLiteral(resolvedScope)}'`);
+                predicate += ` AND scope = '${escapeSqlLiteral(resolvedScope)}'`;
             }
-            const rows = await query.toArray();
-            if (rows.length === 0)
-                return false;
-            await _table.delete(`id = '${safeId}'`);
+            // Use countRows with predicate to check existence efficiently
+            try {
+                const count = await _table.countRows(predicate);
+                if (count === 0) return false;
+            } catch (e) {
+                // Fallback: query-based check
+                const rows = await _table.query().where(predicate).limit(1).toArray();
+                if (rows.length === 0) return false;
+            }
+            await _table.delete(predicate);
             return true;
         },
         async list(options) {
             await ensureInitialized();
             let query = _table.query();
-            // Build where conditions
+            // Build where conditions as single combined predicate
             const conditions = [];
             if (options?.scope) {
                 const resolvedScope = resolveScope(options.scope);
@@ -371,7 +497,6 @@ export function createLanceDBStore(config) {
                 query = query.where(conditions.join(' AND '));
             }
             // Fetch all matching rows for correct app-layer sorting
-            // Note: Don't use select() to avoid LanceDB column name case issues
             const results = await query.toArray();
             // Map to MemoryRecord
             const records = results.map(mapRowToRecord);
@@ -417,10 +542,15 @@ export function createLanceDBStore(config) {
                         hasVectors: false,
                     };
                 }
-                // Get total count
-                // Note: Don't use select() to avoid LanceDB column name case issues
-                const results = await _table.query().toArray();
-                const totalRecords = results.length;
+                // Use countRows() for efficient total count (0.33 API)
+                let totalRecords;
+                try {
+                    totalRecords = await _table.countRows();
+                } catch (e) {
+                    // Fallback for edge cases
+                    const results = await _table.query().toArray();
+                    totalRecords = results.length;
+                }
                 return {
                     connected: _connected,
                     dbPath: config.dbPath,
@@ -429,6 +559,8 @@ export function createLanceDBStore(config) {
                     connectionMode: config.connectionMode,
                     hasVectors: vectorAvailability.hasPopulatedVectors,
                     embeddingDimension: vectorAvailability.dimension,
+                    ftsAvailable: _ftsIndexCreated,
+                    ftsError: _lastFtsError,
                 };
             }
             catch (err) {
@@ -446,6 +578,11 @@ export function createLanceDBStore(config) {
         async probeVectorAvailability() {
             return probeVectors();
         },
+        // Expose FTS state for retrieval layer
+        get ftsIndexCreated() { return _ftsIndexCreated; },
+        get lastFtsError() { return _lastFtsError; },
+        // Expose table reference for retrieval layer (FTS search)
+        get table() { return _table; },
     };
     return store;
 }

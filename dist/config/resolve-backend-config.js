@@ -29,6 +29,8 @@ export function resolveMemoryBackendConfig(config) {
         tableName,
         embeddingDimension,
         embedding: config.embedding,
+        readConsistencyIntervalSeconds: config.readConsistencyIntervalSeconds ?? 5,
+        retrieval: config.retrieval ?? {},
     };
 }
 //# sourceMappingURL=resolve-backend-config.js.map

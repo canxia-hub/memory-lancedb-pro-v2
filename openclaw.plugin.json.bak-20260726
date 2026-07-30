@@ -27,11 +27,6 @@
         "default": 2560,
         "description": "Embedding dimension"
       },
-      "readConsistencyIntervalSeconds": {
-        "type": "number",
-        "default": 5,
-        "description": "Seconds between checks for external writes (0=strong consistency, >0=eventual)"
-      },
       "defaultScope": {
         "type": "string",
         "default": "default",
@@ -52,8 +47,7 @@
             "type": "string",
             "default": "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
           },
-          "rerankApiKeyEnv": { "type": "string", "default": "DASHSCOPE_API_KEY" },
-          "fts": { "type": "boolean", "default": true, "description": "Enable FTS full-text search index" }
+          "rerankApiKeyEnv": { "type": "string", "default": "DASHSCOPE_API_KEY" }
         }
       },
       "hostInterop": {
@@ -112,7 +106,6 @@
       "memory_stats",
       "memory_debug",
       "memory_migrate_legacy",
-      "memory_forget",
       "wiki_status",
       "wiki_new",
       "wiki_get",

@@ -82,6 +82,7 @@ export function createSearchManager(config, backendConfig, externalStore // Opti
         return {
             lexicalAvailable: true, // Phase 1: lexical always available
             vectorAvailable: vectorAvailable,
+            ftsAvailable: store?.ftsIndexCreated ?? false,
             hybridAvailable: config.retrieval.hybrid && vectorAvailable, // Hybrid needs both
             embeddingAvailable: buildDashScopeEmbeddingAvailability({ ...config.embedding, dimension: backendConfig.embeddingDimension }).isFunctional,
             vectorUnavailableReason: vectorAvailable ? undefined : 'No populated vectors available',
@@ -98,7 +99,7 @@ export function createSearchManager(config, backendConfig, externalStore // Opti
         const vectorAvailability = await store.probeVectorAvailability();
         const retrievalAvailability = buildRetrievalAvailability(vectorAvailability.hasPopulatedVectors);
         const records = await store.list({ limit: 1000 });
-        _retriever = createHybridRetriever(records, retrievalAvailability, { ...config.embedding, dimension: backendConfig.embeddingDimension });
+        _retriever = createHybridRetriever(records, retrievalAvailability, { ...config.embedding, dimension: backendConfig.embeddingDimension }, store);
     }
     // Build embedding availability (honest)
     function buildEmbeddingAvailability() {
@@ -115,7 +116,7 @@ export function createSearchManager(config, backendConfig, externalStore // Opti
             const retrievalAvailability = buildRetrievalAvailability(vectorAvailability.hasPopulatedVectors);
             // Get initial records for retriever (will be enhanced later)
             const records = await store.list({ limit: 1000 });
-            _retriever = createHybridRetriever(records, retrievalAvailability, { ...config.embedding, dimension: backendConfig.embeddingDimension });
+            _retriever = createHybridRetriever(records, retrievalAvailability, { ...config.embedding, dimension: backendConfig.embeddingDimension }, store);
             _initialized = true;
         },
         async close() {

@@ -1,21 +1,41 @@
 /**
- * Hybrid Retriever - Internal Retrieval Skeleton
+ * Hybrid Retriever - Internal Retrieval with FTS + Vector + Lexical
  *
- * Phase 1 skeleton provides:
- * - Internal retrieval candidate structure (richer than public MemorySearchResult)
- * - Lexical search dispatch
- * - Vector search placeholder (requires embedding availability)
- * - Hybrid combination logic
+ * Upgraded for LanceDB 0.33.0:
+ * - FTS (BM25) full-text search via LanceDB native index
+ * - Vector search with native cosine distanceType
+ * - Lexical search as fallback
+ * - Hybrid combination with configurable weights
  *
  * Internal candidates must be mapped to public MemorySearchResult before export.
  */
 import { buildMemoryPath } from '../store/scope-manager.js';
 import { embedMultimodal, cosineSimilarity, isZeroVector } from './embedder.js';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+let lancedbModule = null;
+async function loadLanceDB() {
+    if (!lancedbModule) {
+        lancedbModule = require('@lancedb/lancedb');
+    }
+    return lancedbModule;
+}
+
+/**
+ * Sigmoid normalization for BM25 raw scores (unbounded → 0-1 range).
+ * LanceDB FTS _score is raw BM25 which can be very large.
+ * sigmoid(x/5) maps: x=0→0.5, x=5→0.73, x=10→0.88, x=20→0.98
+ */
+function sigmoidNormalize(rawScore) {
+    if (rawScore <= 0) return 0;
+    return 1 / (1 + Math.exp(-rawScore / 5));
+}
+
 /**
  * Simple lexical search implementation.
  *
- * Phase 1 uses basic text matching (not full BM25).
- * Will be enhanced when proper BM25 implementation is available.
+ * Fallback when FTS index is not available.
  *
  * @param query - Search query
  * @param records - Memory records to search
@@ -70,6 +90,7 @@ export function simpleLexicalSearch(query, records, options) {
         .sort((a, b) => b.lexicalScore - a.lexicalScore)
         .slice(0, limit);
 }
+
 /**
  * Truncate content to snippet.
  *
@@ -88,19 +109,21 @@ export function truncateSnippet(content, maxLength = 180) {
     }
     return content.substring(0, maxLength) + '...';
 }
+
 /**
  * Create hybrid retriever instance.
  *
- * Phase 1 skeleton:
- * - Lexical search is available (simple implementation)
- * - Vector search is placeholder (requires embedding provider)
- * - Hybrid is available but vector path will return empty
+ * Supports: lexical, vector, fts, hybrid modes.
+ * FTS uses LanceDB native BM25 index when available.
+ * Vector search uses native cosine distanceType when available.
  *
- * @param records - Memory records (from store)
+ * @param records - Memory records (from store, for lexical fallback)
  * @param availability - Retrieval availability status
+ * @param embeddingConfig - Embedding configuration
+ * @param storeRef - Reference to store for direct table access (FTS/vector search)
  * @returns Hybrid retriever instance
  */
-export function createHybridRetriever(records, availability, embeddingConfig = {}) {
+export function createHybridRetriever(records, availability, embeddingConfig = {}, storeRef = null) {
     const retriever = {
         async retrieve(options) {
             switch (options.mode) {
@@ -108,18 +131,34 @@ export function createHybridRetriever(records, availability, embeddingConfig = {
                     return this.lexicalSearch(options.query, options);
                 case 'vector':
                     return this.vectorSearch(options.query, options);
+                case 'fts':
+                    return this.ftsSearch(options.query, options);
                 case 'hybrid': {
                     const lexicalResults = await this.lexicalSearch(options.query, options);
                     const vectorResults = await this.vectorSearch(options.query, options);
-                    // If vector retrieval is unavailable or not yet implemented, do not
-                    // penalize lexical matches by forcing them through a half-weight hybrid path.
-                    if (vectorResults.length === 0) {
-                        return lexicalResults;
+                    const ftsResults = await this.ftsSearch(options.query, options);
+                    // If only one path has results, use it directly
+                    const nonEmptyPaths = [lexicalResults, vectorResults, ftsResults].filter(r => r.length > 0);
+                    if (nonEmptyPaths.length === 1) {
+                        return nonEmptyPaths[0];
                     }
-                    return this.combineResults(lexicalResults, vectorResults, {
+                    if (nonEmptyPaths.length === 0) {
+                        return [];
+                    }
+                    // Combine all paths
+                    let combined = this.combineResults(lexicalResults, vectorResults, {
                         lexicalWeight: options.lexicalWeight,
                         vectorWeight: options.vectorWeight,
                     });
+                    // Merge FTS results into the combined set
+                    if (ftsResults.length > 0) {
+                        combined = this.mergeFtsResults(combined, ftsResults, {
+                            ftsWeight: options.ftsWeight,
+                            vectorWeight: options.vectorWeight,
+                            lexicalWeight: options.lexicalWeight,
+                        });
+                    }
+                    return combined;
                 }
                 default:
                     return this.lexicalSearch(options.query, options);
@@ -143,6 +182,55 @@ export function createHybridRetriever(records, availability, embeddingConfig = {
             if (!availability.vectorAvailable || !availability.embeddingAvailable) {
                 return [];
             }
+            // Try native LanceDB vector search if store reference is available
+            if (storeRef?.table) {
+                try {
+                    let queryEmbedding;
+                    try {
+                        queryEmbedding = (await embedMultimodal({ text: query }, embeddingConfig)).embedding;
+                    } catch (_err) {
+                        return [];
+                    }
+                    const limit = options?.limit ?? 20;
+                    let searchQuery = storeRef.table.vectorSearch(queryEmbedding)
+                        .distanceType('cosine')
+                        .limit(limit);
+                    // Apply scope filter
+                    if (options?.scope) {
+                        searchQuery = searchQuery.where(`scope = '${options.scope.replace(/'/g, "''")}'`);
+                    }
+                    if (options?.category) {
+                        searchQuery = searchQuery.where(`category = '${options.category.replace(/'/g, "''")}'`);
+                    }
+                    const results = await searchQuery.toArray();
+                    const minScore = options?.minScore ?? 0.1;
+                    return results
+                        .map(row => {
+                            // cosine distance: 0=identical, 2=opposite; score = 1/(1+distance)
+                            const distance = Number(row._distance ?? 0);
+                            const score = 1 / (1 + distance);
+                            return {
+                                id: row.id,
+                                scope: row.scope ?? 'global',
+                                path: buildMemoryPath(row.scope ?? 'global', row.id),
+                                vectorScore: score,
+                                finalScore: score,
+                                snippet: truncateSnippet(row.content, 180),
+                                content: row.content,
+                                category: row.category,
+                                importance: Number(row.importance) ?? 0.7,
+                                createdAt: row.createdAt,
+                                updatedAt: row.updatedAt,
+                                metadata: typeof row.metadata === 'string' ? JSON.parse(row.metadata || '{}') : (row.metadata || {}),
+                            };
+                        })
+                        .filter(c => c.vectorScore >= minScore);
+                } catch (e) {
+                    // Fall through to JS-based vector search
+                    console.warn(`[memory-lancedb-pro] Native vector search failed, falling back to JS: ${e.message?.slice(0, 100)}`);
+                }
+            }
+            // Fallback: JS-based cosine similarity search
             let queryEmbedding;
             try {
                 queryEmbedding = (await embedMultimodal({ text: query }, embeddingConfig)).embedding;
@@ -182,6 +270,55 @@ export function createHybridRetriever(records, availability, embeddingConfig = {
                 .sort((a, b) => (b.vectorScore ?? 0) - (a.vectorScore ?? 0))
                 .slice(0, limit);
         },
+        async ftsSearch(query, options) {
+            // Check if FTS is available
+            if (!storeRef?.table || !storeRef.ftsIndexCreated) {
+                return [];
+            }
+            try {
+                const limit = options?.limit ?? 20;
+                const minScore = options?.minScore ?? 0.1;
+                let searchQuery = storeRef.table.search(query, 'fts').limit(limit);
+                // Apply scope filter
+                if (options?.scope) {
+                    searchQuery = searchQuery.where(`scope = '${options.scope.replace(/'/g, "''")}'`);
+                }
+                if (options?.category) {
+                    searchQuery = searchQuery.where(`category = '${options.category.replace(/'/g, "''")}'`);
+                }
+                const results = await searchQuery.toArray();
+                return results
+                    .map(row => {
+                        // BM25 _score is raw/unbounded; normalize with sigmoid
+                        const rawScore = row._score != null ? Number(row._score) : 0;
+                        const ftsScore = sigmoidNormalize(rawScore);
+                        let metadata = {};
+                        try {
+                            if (typeof row.metadata === 'string') metadata = JSON.parse(row.metadata || '{}');
+                            else if (typeof row.metadata === 'object') metadata = row.metadata || {};
+                        } catch { metadata = {}; }
+                        return {
+                            id: row.id,
+                            scope: row.scope ?? 'global',
+                            path: buildMemoryPath(row.scope ?? 'global', row.id),
+                            ftsScore,
+                            finalScore: ftsScore,
+                            snippet: truncateSnippet(row.content, 180),
+                            content: row.content,
+                            category: row.category,
+                            importance: Number(row.importance) ?? 0.7,
+                            createdAt: row.createdAt,
+                            updatedAt: row.updatedAt,
+                            metadata,
+                        };
+                    })
+                    .filter(c => c.ftsScore >= minScore);
+            } catch (e) {
+                // FTS search failed; return empty (non-critical, vector/lexical still work)
+                console.warn(`[memory-lancedb-pro] FTS search failed: ${e.message?.slice(0, 100)}`);
+                return [];
+            }
+        },
         combineResults(lexical, vector, options) {
             const lexicalWeight = options?.lexicalWeight ?? 0.5;
             const vectorWeight = options?.vectorWeight ?? 0.5;
@@ -216,6 +353,46 @@ export function createHybridRetriever(records, availability, embeddingConfig = {
                 }
             }
             // Sort by final score and return
+            return Array.from(candidateMap.values())
+                .sort((a, b) => b.finalScore - a.finalScore);
+        },
+        mergeFtsResults(combined, ftsResults, options) {
+            const ftsWeight = options?.ftsWeight ?? 0.3;
+            const vectorWeight = options?.vectorWeight ?? 0.4;
+            const lexicalWeight = options?.lexicalWeight ?? 0.3;
+            // Normalize weights to sum to 1
+            const totalWeight = ftsWeight + vectorWeight + lexicalWeight;
+            const wFts = ftsWeight / totalWeight;
+            const wVec = vectorWeight / totalWeight;
+            const wLex = lexicalWeight / totalWeight;
+            const candidateMap = new Map();
+            // Seed with existing combined results
+            for (const c of combined) {
+                candidateMap.set(c.path, { ...c });
+            }
+            // Add/merge FTS results
+            for (const c of ftsResults) {
+                const existing = candidateMap.get(c.path);
+                if (existing) {
+                    // Merge FTS score into existing hybrid score
+                    existing.ftsScore = c.ftsScore;
+                    // Recalculate with three-way weights
+                    const lexPart = (existing.lexicalScore ?? 0) * wLex;
+                    const vecPart = (existing.vectorScore ?? 0) * wVec;
+                    const ftsPart = (c.ftsScore ?? 0) * wFts;
+                    existing.hybridScore = lexPart + vecPart + ftsPart;
+                    existing.finalScore = existing.hybridScore;
+                }
+                else {
+                    // New candidate from FTS only
+                    candidateMap.set(c.path, {
+                        ...c,
+                        ftsScore: c.ftsScore,
+                        hybridScore: (c.ftsScore ?? 0) * wFts,
+                        finalScore: (c.ftsScore ?? 0) * wFts,
+                    });
+                }
+            }
             return Array.from(candidateMap.values())
                 .sort((a, b) => b.finalScore - a.finalScore);
         },

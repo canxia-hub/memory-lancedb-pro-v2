@@ -123,10 +123,13 @@ export function createAssetStore(config) {
         const lancedb = await loadLanceDB();
         // Validate and prepare assets directory
         _assetsPath = validateAssetsPath(config.dbPath);
-        // Open or connect to existing database (same as memories table)
+        // 0.33: connect with readConsistencyInterval for cross-process visibility
+        const readConsistencyInterval = config.readConsistencyIntervalSeconds ?? 5;
         let db;
         try {
-            db = await lancedb.connect(config.dbPath);
+            db = await lancedb.connect(config.dbPath, {
+                readConsistencyInterval,
+            });
         }
         catch (err) {
             throw new Error(`Failed to open LanceDB at "${config.dbPath}": ${err.code || ''} ${err.message}`);

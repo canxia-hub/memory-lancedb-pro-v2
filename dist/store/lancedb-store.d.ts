@@ -4,7 +4,15 @@
  * Real LanceDB persistence with file-based storage.
  * Replaces Phase 1 in-memory fallback with true database operations.
  */
-import { MemoryBackendConfig } from '../config/resolve-backend-config.js';
+export interface MemoryBackendConfig {
+    dbPath: string;
+    connectionMode: 'embedded' | 'remote';
+    tableName: string;
+    embeddingDimension: number;
+    embedding?: Record<string, unknown>;
+    readConsistencyIntervalSeconds?: number;
+    retrieval?: Record<string, unknown>;
+}
 /**
  * Internal memory record structure.
  * Richer than public MemorySearchResult, but must be mapped before export.
@@ -68,6 +76,10 @@ export interface StoreStatus {
     hasVectors: boolean;
     /** Embedding dimension if vectors exist */
     embeddingDimension?: number;
+    /** Whether FTS index is available */
+    ftsAvailable?: boolean;
+    /** Last FTS error if index creation failed */
+    ftsError?: string | null;
 }
 /**
  * Minimal LanceDB Store interface.
@@ -91,6 +103,12 @@ export interface LanceDBStore {
     status(): Promise<StoreStatus>;
     /** Probe vector availability (for search manager) */
     probeVectorAvailability(): Promise<VectorAvailability>;
+    /** Whether FTS index has been created */
+    readonly ftsIndexCreated: boolean;
+    /** Last FTS error if index creation failed */
+    readonly lastFtsError: string | null;
+    /** Direct table reference for retrieval layer */
+    readonly table: any;
 }
 /**
  * Vector availability probe result.

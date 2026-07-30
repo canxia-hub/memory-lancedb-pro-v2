@@ -22,6 +22,7 @@ export const DEFAULT_CONFIG = {
         rerankModel: 'qwen3-vl-rerank',
         rerankBaseUrl: 'https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank',
         rerankApiKeyEnv: 'DASHSCOPE_API_KEY',
+        fts: true,
     },
     hostInterop: {
         enableArtifacts: true,
