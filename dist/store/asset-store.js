@@ -15,6 +15,27 @@ import { existsSync, mkdirSync, accessSync, constants, lstatSync, realpathSync }
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { embedMultimodal } from '../retrieval/embedder.js';
+import { Field, FixedSizeList, Float32, Float64, Schema, Utf8 } from 'apache-arrow';
+
+// 0.33: assets 表同样必须使用 FixedSizeList<Float32> 向量列
+function makeAssetsSchema(dim) {
+    return new Schema([
+        new Field('assetId', new Utf8(), false),
+        new Field('memoryId', new Utf8(), false),
+        new Field('modality', new Utf8(), false),
+        new Field('mimeType', new Utf8(), false),
+        new Field('storagePath', new Utf8(), false),
+        new Field('sha256', new Utf8(), true),
+        new Field('sizeBytes', new Float64(), true),
+        new Field('caption', new Utf8(), true),
+        new Field('ocrText', new Utf8(), true),
+        new Field('transcript', new Utf8(), true),
+        new Field('summary', new Utf8(), true),
+        new Field('embedding', new FixedSizeList(dim, new Field('item', new Float32(), true)), true),
+        new Field('createdAt', new Utf8(), false),
+        new Field('metadataJson', new Utf8(), false),
+    ]);
+}
 // LanceDB dynamic import
 const require = createRequire(import.meta.url);
 let lancedbModule = null;
@@ -140,29 +161,9 @@ export function createAssetStore(config) {
             table = await db.openTable(config.tableName);
         }
         catch (_openErr) {
-            // Table doesn't exist - create with schema row
-            // IMPORTANT: LanceDB cannot infer types for all-null columns
-            // Provide non-null dummy values for nullable fields
-            const schemaRow = {
-                assetId: '__schema__',
-                memoryId: '__schema__',
-                modality: 'file',
-                mimeType: 'application/octet-stream',
-                storagePath: '/dummy/path',
-                sha256: '', // Empty string instead of null
-                sizeBytes: 0, // 0 instead of null
-                caption: '',
-                ocrText: '',
-                transcript: '',
-                summary: '',
-                embedding: Array.from({ length: config.embeddingDimension }).fill(0),
-                createdAt: new Date().toISOString(),
-                metadataJson: '{}',
-            };
+            // Table doesn't exist - create with proper FixedSizeList<Float32> vector schema (0.33)
             try {
-                table = await db.createTable(config.tableName, [schemaRow]);
-                // Note: Don't delete schema row - LanceDB field name handling is inconsistent
-                // The schema row will be filtered out in queries
+                table = await db.createEmptyTable(config.tableName, makeAssetsSchema(config.embeddingDimension), { existOk: true });
             }
             catch (createErr) {
                 // Race condition: another process created the table

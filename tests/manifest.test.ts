@@ -58,10 +58,10 @@ describe("openclaw.plugin.json manifest", () => {
     expect(manifest.hooks.timeoutMs).toBe(60000);
   });
 
-  it("declares contracts.tools with 17 tools", () => {
+  it("declares contracts.tools with 18 tools", () => {
     expect(manifest.contracts).toBeDefined();
     expect(manifest.contracts.tools).toBeDefined();
-    expect(manifest.contracts.tools.length).toBe(17);
+    expect(manifest.contracts.tools.length).toBe(18);
   });
 
   it("includes all required memory tools", () => {

@@ -14,6 +14,30 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, accessSync, constants, lstatSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { embedMultimodal } from '../retrieval/embedder.js';
+import { Field, FixedSizeList, Float32, Float64, Schema, Utf8 } from 'apache-arrow';
+
+// 0.33: memories 表必须使用 FixedSizeList<Float32> 向量列，否则 vectorSearch 不可用
+//（0.4 时代 schemaRow 推断出的 List<Float64> 在 0.33 下不被识别为向量列）
+function makeMemoriesSchema(dim) {
+    return new Schema([
+        new Field('id', new Utf8(), false),
+        new Field('scope', new Utf8(), false),
+        new Field('content', new Utf8(), false),
+        new Field('embedding', new FixedSizeList(dim, new Field('item', new Float32(), true)), true),
+        new Field('category', new Utf8(), false),
+        new Field('importance', new Float64(), false),
+        new Field('createdAt', new Utf8(), false),
+        new Field('updatedAt', new Utf8(), false),
+        new Field('metadata', new Utf8(), false),
+    ]);
+}
+
+// 检测 0.4 遗留的可变长 List 向量列（0.33 下 vectorSearch 不可用，需跑迁移脚本）
+function isLegacyVectorSchema(field) {
+    if (!field) return false;
+    const typeName = String(field.type ?? '');
+    return /^List</.test(typeName) && !/FixedSizeList/.test(typeName);
+}
 // LanceDB dynamic import
 // Use createRequire for ESM compatibility with CommonJS modules
 const require = createRequire(import.meta.url);
@@ -148,21 +172,9 @@ export function createLanceDBStore(config) {
             table = await db.openTable(config.tableName);
         }
         catch (_openErr) {
-            // Table doesn't exist - create with schema row
-            const schemaRow = {
-                id: '__schema__',
-                scope: 'global',
-                content: '',
-                embedding: Array.from({ length: config.embeddingDimension }).fill(0),
-                category: 'other',
-                importance: 0.7,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                metadata: '{}',
-            };
+            // Table doesn't exist - create with proper FixedSizeList<Float32> vector schema (0.33)
             try {
-                table = await db.createTable(config.tableName, [schemaRow]);
-                await table.delete('id = "__schema__"');
+                table = await db.createEmptyTable(config.tableName, makeMemoriesSchema(config.embeddingDimension), { existOk: true });
             }
             catch (createErr) {
                 // Race condition: another process created the table
@@ -174,6 +186,19 @@ export function createLanceDBStore(config) {
                 }
             }
         }
+
+        // 0.4 遗留 schema 检测：可变长 List 向量列在 0.33 下 vectorSearch 不可用
+        // → 提示跑 scripts/migrate-v4-vector-schema.mjs；检索层会回退 JS cosine
+        try {
+            const _schemaNow = await table.schema();
+            const _embField = _schemaNow.fields.find((f) => f.name === 'embedding');
+            if (isLegacyVectorSchema(_embField)) {
+                console.warn('[memory-lancedb-pro] legacy variable-length vector column detected (0.4 schema). ' +
+                    'Native vectorSearch is unavailable until you run scripts/migrate-v4-vector-schema.mjs. ' +
+                    'Falling back to JS cosine retrieval.');
+            }
+        }
+        catch { /* schema probe best-effort */ }
 
         // Validate vector dimensions
         const sample = await table.query().limit(1).toArray();
@@ -244,7 +269,16 @@ export function createLanceDBStore(config) {
             );
             if (!hasFts) {
                 await table.createIndex('content', {
-                    config: lancedb.Index.fts({ withPosition: true }),
+                    config: lancedb.Index.fts({
+                        withPosition: true,
+                        // 中英分词：0.33 内置 icu tokenizer（CJK 切分 + 英文），无需外部语言模型
+                        //（jieba 需外部模型目录，本机不可用；simple 无法切分 CJK）
+                        baseTokenizer: 'icu',
+                        lowercase: true,
+                        stem: false,
+                        removeStopWords: false,
+                        asciiFolding: false,
+                    }),
                 });
             }
             _ftsIndexCreated = true;
