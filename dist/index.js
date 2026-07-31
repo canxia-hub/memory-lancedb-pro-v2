@@ -36,6 +36,9 @@ import { initPluginState, setStats, isStateActive } from './state/plugin-state.j
 // M2: Auto-memory hooks (capture/recall)
 import { registerAutoMemoryHooks } from './hooks/auto-memory.js';
 
+// M4: Dreaming engine
+import { createDreamingEngine } from './dreaming/engine.js';
+
 /**
  * Plugin metadata
  */
@@ -214,6 +217,63 @@ function register(api) {
     } else {
         api.logger.info?.('[memory-lancedb-pro] api.on not available, auto-memory hooks skipped');
     }
+
+    // M4: Initialize dreaming engine (lazy, zero overhead when disabled)
+    try {
+        const dreamingEngine = createDreamingEngine({
+            store: {
+                list: async (scopes, category, limit, offset) => {
+                    const db = getStore();
+                    if (!db) return [];
+                    // Adapt to our store API
+                    if (db.listEntries) return db.listEntries(scopes, category, limit, offset);
+                    return [];
+                },
+                fetchForCompaction: undefined, // Will be available after store API extends
+                patchMetadata: async (id, patch, scopes) => {
+                    const db = getStore();
+                    if (!db) return null;
+                    if (db.patchMetadata) return db.patchMetadata(id, patch, scopes);
+                    return null;
+                },
+                update: async (id, updates, scopes) => {
+                    const db = getStore();
+                    if (!db) return null;
+                    if (db.update) return db.update(id, updates, scopes);
+                    return null;
+                },
+                store: async (entry) => {
+                    const db = getStore();
+                    if (!db) return null;
+                    return db.store(entry.scope ?? 'default', entry);
+                },
+                stats: async (scopes) => {
+                    const db = getStore();
+                    if (!db || !db.stats) return { totalCount: 0, scopeCounts: {} };
+                    return db.stats(scopes);
+                },
+            },
+            embedder: {
+                async embed(text) {
+                    const { embedMultimodal } = await import('./retrieval/embedder.js');
+                    const embConfig = config.embedding ?? {};
+                    const result = await embedMultimodal({ text }, { ...embConfig, dimension: config.embeddingDimension ?? 2560 });
+                    return result.embedding;
+                },
+            },
+            config: rawConfig?.dreaming,
+            logger: api.logger,
+        });
+
+        if (dreamingEngine.config.enabled) {
+            dreamingEngine.start();
+            api.logger.info?.(`[memory-lancedb-pro] dreaming engine started (frequency=${dreamingEngine.config.frequency}, timezone=${dreamingEngine.config.timezone})`);
+        } else {
+            api.logger.info?.('[memory-lancedb-pro] dreaming engine created (disabled, zero overhead)');
+        }
+    } catch (error) {
+        api.logger.warn?.(`[memory-lancedb-pro] dreaming engine not initialized: ${error}`);
+    }
 }
 
 function getCapability() { return _capabilityRuntime; }
@@ -239,5 +299,9 @@ export { shouldCapture, detectCategory, normalizeRecallQuery, extractLatestUserT
 export { looksLikePromptInjection, escapeMemoryForPrompt, formatRelevantMemoriesContext, cleanMemorySearchResults } from './capture/prompt-defense.js';
 export { findCleanDuplicateMemory } from './capture/dedup.js';
 export { registerAutoMemoryHooks, resolveHookConfig, isMemorySubSession } from './hooks/auto-memory.js';
+
+// M4: Dreaming engine exports
+export { createDreamingEngine, normalizeDreamingConfig, parseDailyCron, computeNextDreamingDelayMs, DEFAULT_DREAMING_CONFIG } from './dreaming/engine.js';
+export { DREAMING_SOURCE_ALIASES, STORED_MEMORY_SOURCES, VALID_DREAMING_SOURCE_FILTERS } from './dreaming/config.js';
 
 export * from './wiki/index.js';
