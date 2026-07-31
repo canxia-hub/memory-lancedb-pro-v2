@@ -117,6 +117,71 @@
         "default": [],
         "description": "Custom trigger phrases for auto-capture (case-insensitive substring match)"
       },
+      "dreaming": {
+        "type": "object",
+        "description": "Dreaming engine configuration (M4). Default disabled — enable only after testing gateway startup impact.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "Enable dreaming sweep engine (default: false). Warning: enable only after verifying gateway startup overhead <2s."
+          },
+          "frequency": {
+            "type": "string",
+            "default": "0 3 * * *",
+            "description": "Daily cron expression for sweep scheduling (e.g. '0 3 * * *' for 3AM, '@daily' for midnight)"
+          },
+          "timezone": {
+            "type": "string",
+            "default": "Asia/Shanghai",
+            "description": "IANA timezone for cron scheduling (default: Asia/Shanghai)"
+          },
+          "verboseLogging": {
+            "type": "boolean",
+            "default": false,
+            "description": "Enable verbose debug logging for dreaming sweeps"
+          },
+          "phases": {
+            "type": "object",
+            "description": "Per-phase configuration (light=dedup, deep=promotion, rem=pattern insight)",
+            "properties": {
+              "light": {
+                "type": "object",
+                "properties": {
+                  "enabled": { "type": "boolean", "default": true },
+                  "lookbackDays": { "type": "integer", "default": 2, "minimum": 0 },
+                  "limit": { "type": "integer", "default": 100, "minimum": 0 },
+                  "dedupeSimilarity": { "type": "number", "default": 0.92, "minimum": 0, "maximum": 1 },
+                  "sources": { "type": "array", "items": { "type": "string" } }
+                }
+              },
+              "deep": {
+                "type": "object",
+                "properties": {
+                  "enabled": { "type": "boolean", "default": true },
+                  "limit": { "type": "integer", "default": 10, "minimum": 0 },
+                  "minScore": { "type": "number", "default": 0.6, "minimum": 0, "maximum": 1 },
+                  "minRecallCount": { "type": "integer", "default": 3, "minimum": 0 },
+                  "minUniqueQueries": { "type": "integer", "default": 0, "minimum": 0 },
+                  "recencyHalfLifeDays": { "type": "integer", "default": 14, "minimum": 1 },
+                  "maxAgeDays": { "type": "integer", "default": 90, "minimum": 1 },
+                  "sources": { "type": "array", "items": { "type": "string" } }
+                }
+              },
+              "rem": {
+                "type": "object",
+                "properties": {
+                  "enabled": { "type": "boolean", "default": true },
+                  "lookbackDays": { "type": "integer", "default": 7, "minimum": 0 },
+                  "limit": { "type": "integer", "default": 10, "minimum": 0 },
+                  "minPatternStrength": { "type": "number", "default": 0.6, "minimum": 0, "maximum": 1 },
+                  "sources": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        }
+      },
       "reflection": {
         "type": "object",
         "description": "Reflection engine configuration (M3). Default disabled — enable only after testing.",
