@@ -116,6 +116,46 @@
         "items": { "type": "string" },
         "default": [],
         "description": "Custom trigger phrases for auto-capture (case-insensitive substring match)"
+      },
+      "reflection": {
+        "type": "object",
+        "description": "Reflection engine configuration (M3). Default disabled — enable only after testing.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": false,
+            "description": "Enable reflection distiller at agent_end (default: false, 灰度原则)"
+          },
+          "distillerModel": {
+            "type": ["string", "null"],
+            "default": null,
+            "description": "Model for distiller sub-session (null=follow agent default model)"
+          },
+          "maxConcurrency": {
+            "type": "integer",
+            "default": 2,
+            "minimum": 1,
+            "description": "Max concurrent distiller runs per agent lane"
+          },
+          "derivedMaxAgeDays": {
+            "type": "integer",
+            "default": 14,
+            "minimum": 1,
+            "description": "Max age in days for derived reflection items (older items pruned from injection)"
+          },
+          "mappedMaxAgeDays": {
+            "type": "integer",
+            "default": 60,
+            "minimum": 1,
+            "description": "Max age in days for mapped reflection items"
+          },
+          "admissionPreset": {
+            "type": "string",
+            "enum": ["balanced", "conservative", "high-recall"],
+            "default": "balanced",
+            "description": "Admission control preset for mapped reflection entries"
+          }
+        }
       }
     },
     "required": ["dbPath"]

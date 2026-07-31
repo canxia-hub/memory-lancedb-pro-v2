@@ -28,6 +28,13 @@ import {
   formatRelevantMemoriesContext,
 } from '../capture/prompt-defense.js';
 import { findCleanDuplicateMemory } from '../capture/dedup.js';
+import {
+  normalizeReflectionConfig,
+  runReflectionPipeline,
+  ReflectionLaneManager,
+  ReflectionCache,
+} from '../reflection/distiller.js';
+import { registerReflectionInjector } from '../reflection/injector.js';
 
 // ── Constants ──────────────────────────────────────────────────────────
 
@@ -35,6 +42,9 @@ const DEFAULT_AUTO_RECALL_TIMEOUT_MS = 3000;
 const DEFAULT_AUTO_RECALL_OVERFETCH_LIMIT = 10;
 const DEFAULT_AUTO_RECALL_RESULT_CAP = 3;
 const MAX_CAPTURE_PER_TURN = 3;
+
+/** Reflection distiller timeout (ms). */
+const DEFAULT_REFLECTION_DISTILLER_TIMEOUT_MS = 30_000;
 
 /**
  * Session key prefixes that indicate plugin-internal sub-sessions.
@@ -46,6 +56,7 @@ const MEMORY_SUBSESSION_PREFIXES = [
   'reflection:',
   'distiller:',
   'dreaming:',
+  'temp:memory-reflection:',
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -116,6 +127,22 @@ export function registerAutoMemoryHooks(api, deps) {
   // Cursor map: key = `${agentId}:${sessionKey}`, value = AutoCaptureCursor
   const autoCaptureCursors = new Map();
 
+  // ── Reflection infrastructure ──────────────────────────────────────
+  const reflectionConfig = normalizeReflectionConfig(pluginConfig);
+  const reflectionLaneManager = new ReflectionLaneManager(reflectionConfig.maxConcurrency);
+  const reflectionCache = new ReflectionCache();
+
+  // Register reflection injector (before_prompt_build, priority-layered)
+  // Only active when reflection.enabled=true
+  if (reflectionConfig.enabled) {
+    registerReflectionInjector(api, {
+      getStore,
+      getEmbedder,
+      pluginConfig,
+      reflectionCache,
+    });
+  }
+
   // ── before_prompt_build: auto-recall ────────────────────────────────
   api.on('before_prompt_build', async (event, ctx) => {
     const cfg = resolveHookConfig(pluginConfig);
@@ -173,103 +200,132 @@ export function registerAutoMemoryHooks(api, deps) {
     }
   });
 
-  // ── agent_end: auto-capture ─────────────────────────────────────────
+  // ── agent_end: auto-capture + reflection distiller ────────────────
   api.on('agent_end', async (event, ctx) => {
     const cfg = resolveHookConfig(pluginConfig);
-    if (!cfg.autoCapture) return;
-    if (isIncognitoSessionKey(ctx.sessionKey)) return;
-
     const agentId = normalizeAgentId(ctx.agentId);
-    if (!agentId) return;
+    const isSubSession = isMemorySubSession(ctx.sessionKey);
+    const isIncognito = isIncognitoSessionKey(ctx.sessionKey);
 
-    // Anti-recursion: skip memory sub-sessions
-    if (isMemorySubSession(ctx.sessionKey)) return;
+    // ── Auto-capture (existing M2 logic) ─────────────────────────────
+    if (cfg.autoCapture && !isSubSession && !isIncognito && agentId &&
+        event.success && event.messages && event.messages.length > 0) {
+      try {
+        const db = getStore();
+        const embedder = getEmbedder();
+        if (db && embedder) {
+          const rawCursorKey = ctx.sessionKey ?? ctx.sessionId;
+          const cursorKey = rawCursorKey ? `${agentId}:${rawCursorKey}` : undefined;
+          const startIndex = resolveAutoCaptureStartIndex(
+            event.messages,
+            cursorKey ? autoCaptureCursors.get(cursorKey) : undefined,
+          );
 
-    if (!event.success || !event.messages || event.messages.length === 0) return;
+          let stored = 0;
+          let capturableSeen = 0;
 
-    try {
-      const db = getStore();
-      const embedder = getEmbedder();
-      if (!db || !embedder) return;
+          for (let index = startIndex; index < event.messages.length; index++) {
+            const message = event.messages[index];
+            let messageProcessed = false;
 
-      const rawCursorKey = ctx.sessionKey ?? ctx.sessionId;
-      const cursorKey = rawCursorKey ? `${agentId}:${rawCursorKey}` : undefined;
-      const startIndex = resolveAutoCaptureStartIndex(
-        event.messages,
-        cursorKey ? autoCaptureCursors.get(cursorKey) : undefined,
-      );
+            try {
+              const msgObj = message?.role === 'user' ? message : null;
+              if (!msgObj) {
+                messageProcessed = true;
+                continue;
+              }
 
-      let stored = 0;
-      let capturableSeen = 0;
+              const contentTexts = typeof msgObj.content === 'string'
+                ? [msgObj.content]
+                : Array.isArray(msgObj.content)
+                  ? msgObj.content
+                      .filter(b => b?.type === 'text' && typeof b.text === 'string')
+                      .map(b => b.text)
+                  : [];
 
-      for (let index = startIndex; index < event.messages.length; index++) {
-        const message = event.messages[index];
-        let messageProcessed = false;
+              for (const text of contentTexts) {
+                const sanitized = sanitizeForMemoryCapture(text);
+                if (
+                  !sanitized ||
+                  !shouldCapture(sanitized, {
+                    customTriggers: cfg.customTriggers,
+                    maxChars: cfg.captureMaxChars,
+                  })
+                ) {
+                  continue;
+                }
+                capturableSeen++;
+                if (capturableSeen > MAX_CAPTURE_PER_TURN) continue;
 
-        try {
-          // Extract user text content from message
-          const msgObj = message?.role === 'user' ? message : null;
-          if (!msgObj) {
-            messageProcessed = true;
-            continue;
-          }
+                const category = detectCategory(sanitized);
+                const vector = await embedder.embed(sanitized);
 
-          const contentTexts = typeof msgObj.content === 'string'
-            ? [msgObj.content]
-            : Array.isArray(msgObj.content)
-              ? msgObj.content
-                  .filter(b => b?.type === 'text' && typeof b.text === 'string')
-                  .map(b => b.text)
-              : [];
+                const existing = await findCleanDuplicateMemory(db, agentId, vector);
+                if (existing) continue;
 
-          for (const text of contentTexts) {
-            const sanitized = sanitizeForMemoryCapture(text);
-            if (
-              !sanitized ||
-              !shouldCapture(sanitized, {
-                customTriggers: cfg.customTriggers,
-                maxChars: cfg.captureMaxChars,
-              })
-            ) {
-              continue;
+                await db.store(agentId, {
+                  text: sanitized,
+                  vector,
+                  importance: 0.7,
+                  category,
+                });
+                stored++;
+              }
+              messageProcessed = true;
+            } finally {
+              if (messageProcessed && cursorKey) {
+                autoCaptureCursors.set(cursorKey, {
+                  nextIndex: index + 1,
+                  lastMessageFingerprint: messageFingerprint(message),
+                });
+              }
             }
-            capturableSeen++;
-            if (capturableSeen > MAX_CAPTURE_PER_TURN) continue;
-
-            const category = detectCategory(sanitized);
-            const vector = await embedder.embed(sanitized);
-
-            const existing = await findCleanDuplicateMemory(db, agentId, vector);
-            if (existing) continue;
-
-            await db.store(agentId, {
-              text: sanitized,
-              vector,
-              importance: 0.7,
-              category,
-            });
-            stored++;
           }
-          messageProcessed = true;
-        } finally {
-          if (messageProcessed && cursorKey) {
-            autoCaptureCursors.set(cursorKey, {
-              nextIndex: index + 1,
-              lastMessageFingerprint: messageFingerprint(message),
-            });
+
+          if (stored > 0) {
+            api.logger.info?.(`[memory-lancedb-pro] auto-captured ${stored} memories`);
           }
         }
+      } catch (err) {
+        api.logger.warn?.(`[memory-lancedb-pro] auto-capture failed: ${String(err)}`);
       }
+    }
 
-      if (stored > 0) {
-        api.logger.info?.(`[memory-lancedb-pro] auto-captured ${stored} memories`);
+    // ── Reflection distiller (M3, only when enabled) ─────────────────
+    if (reflectionConfig.enabled && !isSubSession && !isIncognito && agentId &&
+        event.success && event.messages && event.messages.length > 0) {
+      // Acquire lane slot (bounded concurrency per agent)
+      const release = await reflectionLaneManager.acquire(agentId);
+      try {
+        await runReflectionPipeline({
+          api,
+          agentId,
+          sessionKey: ctx.sessionKey || '',
+          sessionId: ctx.sessionId || '',
+          messages: event.messages,
+          reflectionConfig,
+          admissionConfig: pluginConfig?.reflection?.admissionPreset
+            ? { preset: pluginConfig.reflection.admissionPreset }
+            : undefined,
+          getStore,
+          getEmbedder,
+          onLog: (level, msg) => {
+            if (level === 'warn') api.logger.warn?.(`[memory-lancedb-pro] ${msg}`);
+            else api.logger.info?.(`[memory-lancedb-pro] ${msg}`);
+          },
+          timeoutMs: DEFAULT_REFLECTION_DISTILLER_TIMEOUT_MS,
+        });
+        // Invalidate cache after new reflection items stored
+        reflectionCache.invalidate(agentId);
+      } catch (err) {
+        api.logger.warn?.(`[memory-lancedb-pro] reflection distiller failed: ${String(err)}`);
+      } finally {
+        release();
       }
-    } catch (err) {
-      api.logger.warn?.(`[memory-lancedb-pro] auto-capture failed: ${String(err)}`);
     }
   });
 
-  // ── session_end: cursor cleanup ─────────────────────────────────────
+  // ── session_end: cursor cleanup + reflection cache cleanup ────────
   api.on('session_end', (event, ctx) => {
     const agentId = ctx.agentId ? normalizeAgentId(ctx.agentId) : undefined;
     const rawCursorKey = ctx.sessionKey ?? event.sessionKey ?? ctx.sessionId ?? event.sessionId;
@@ -282,7 +338,25 @@ export function registerAutoMemoryHooks(api, deps) {
     }
   });
 
-  api.logger.info?.('[memory-lancedb-pro] auto-memory hooks registered (autoCapture=false, autoRecall=false by default)');
+  // ── memory delete cascade: invalidate reflection cache ─────────────
+  // When memories are deleted, the reflection cache may contain stale references.
+  // We hook into the tool execution lifecycle to detect delete operations.
+  api.on('tool_after_execute', async (event, ctx) => {
+    if (!event?.toolName) return;
+    const toolName = event.toolName;
+    if (toolName === 'memory_archive' || toolName === 'memory_forget') {
+      // Invalidate cache for the affected agent (or all if unknown)
+      const agentId = normalizeAgentId(ctx.agentId);
+      reflectionCache.invalidate(agentId);
+    }
+  });
+
+  const enabledParts = [];
+  if (reflectionConfig.enabled) enabledParts.push('reflection=on');
+  api.logger.info?.(
+    `[memory-lancedb-pro] auto-memory hooks registered ` +
+    `(autoCapture=false, autoRecall=false${enabledParts.length ? ', ' + enabledParts.join(', ') : ''} by default)`
+  );
 }
 
 // Export helpers for testing
