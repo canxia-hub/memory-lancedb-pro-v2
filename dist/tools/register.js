@@ -108,6 +108,31 @@ export async function closeToolContext() {
     _toolContextInitPromise = null;
     _legacyMigrationManager = null;
 }
+
+/**
+ * Get the shared store instance (for hooks and other internal consumers).
+ * Returns null if not yet initialized.
+ */
+export function getStore() { return _store; }
+
+/**
+ * Get the shared search manager instance (for hooks and other internal consumers).
+ * Returns null if not yet initialized.
+ */
+export function getSearchManager() { return _searchManager; }
+
+/**
+ * Get the current plugin config (for hooks and other internal consumers).
+ * Returns null if not yet initialized.
+ */
+export function getPluginConfig() { return _config; }
+
+/**
+ * Get the current backend config (for hooks and other internal consumers).
+ * Returns null if not yet initialized.
+ */
+export function getBackendConfig() { return _backendConfig; }
+
 function getLegacyMigrationManager() {
     if (!_legacyMigrationManager) {
         _legacyMigrationManager = createLegacyMigrationManager();

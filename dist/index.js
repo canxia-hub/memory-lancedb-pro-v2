@@ -17,7 +17,7 @@ import { resolveConfig } from './config/resolve-config.js';
 import { resolveMemoryBackendConfig } from './config/resolve-backend-config.js';
 
 // Tool registration
-import { registerAllMemoryTools, initializeToolContext } from './tools/register.js';
+import { registerAllMemoryTools, initializeToolContext, getStore, getPluginConfig, getBackendConfig } from './tools/register.js';
 
 // Interop imports
 import { createMemoryCapabilityRuntime } from './interop/memory-capability.js';
@@ -32,6 +32,9 @@ import { registerWikiCli } from './wiki/wiki-command.js';
 
 // Phase 3: Plugin state persistence (openKeyedStore)
 import { initPluginState, setStats, isStateActive } from './state/plugin-state.js';
+
+// M2: Auto-memory hooks (capture/recall)
+import { registerAutoMemoryHooks } from './hooks/auto-memory.js';
 
 /**
  * Plugin metadata
@@ -179,6 +182,38 @@ function register(api) {
     }).catch((error) => {
         api.logger.warn?.(`[memory-lancedb-pro] state store unavailable: ${error.message}`);
     });
+
+    // M2: Register auto-memory hooks (capture/recall)
+    // Probe api.on availability before registering (defensive)
+    if (typeof api.on === 'function') {
+        try {
+            const embeddingConfig = config.embedding ?? {};
+            const embeddingDimension = config.embeddingDimension ?? 2560;
+
+            // Lazy embedder wrapper for hooks (embedMultimodal is sync-importable)
+            const hookEmbedder = {
+                async embed(text) {
+                    const { embedMultimodal } = await import('./retrieval/embedder.js');
+                    const result = await embedMultimodal({ text }, { ...embeddingConfig, dimension: embeddingDimension });
+                    return result.embedding;
+                },
+            };
+
+            // Lazy store getter — waits for tool context initialization
+            const hookStoreGetter = () => getStore();
+            const hookEmbedderGetter = () => hookEmbedder;
+
+            registerAutoMemoryHooks(api, {
+                getStore: hookStoreGetter,
+                getEmbedder: hookEmbedderGetter,
+                pluginConfig: rawConfig,
+            });
+        } catch (error) {
+            api.logger.warn?.(`[memory-lancedb-pro] auto-memory hooks not registered: ${error}`);
+        }
+    } else {
+        api.logger.info?.('[memory-lancedb-pro] api.on not available, auto-memory hooks skipped');
+    }
 }
 
 function getCapability() { return _capabilityRuntime; }
@@ -197,4 +232,12 @@ export { createMemoryCapabilityRuntime, getMemoryCapabilityRuntime, getMemorySea
 export { ARTIFACT_PATHS, listPublicArtifacts, hasStandardArtifacts, getArtifactContent, createPublicArtifactsProvider } from './interop/public-artifacts.js';
 export { ALLOWED_EVENT_TYPES, isValidEventType, createHostEventsManager, createRecallRecordedEvent, createPromotionAppliedEvent } from './interop/host-events.js';
 export { getCapability, getEvents };
+
+// M2: Capture/Policy/Prompt-Defense exports
+export { looksLikeEnvelopeSludge, sanitizeForMemoryCapture, dropMediaNoteLines } from './capture/sanitization.js';
+export { shouldCapture, detectCategory, normalizeRecallQuery, extractLatestUserText, messageFingerprint, resolveAutoCaptureStartIndex, DEFAULT_CAPTURE_MAX_CHARS, DEFAULT_RECALL_MAX_CHARS } from './capture/policy.js';
+export { looksLikePromptInjection, escapeMemoryForPrompt, formatRelevantMemoriesContext, cleanMemorySearchResults } from './capture/prompt-defense.js';
+export { findCleanDuplicateMemory } from './capture/dedup.js';
+export { registerAutoMemoryHooks, resolveHookConfig, isMemorySubSession } from './hooks/auto-memory.js';
+
 export * from './wiki/index.js';

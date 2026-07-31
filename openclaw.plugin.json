@@ -90,6 +90,32 @@
           "nativeDimension": { "type": "integer", "default": 768 },
           "storageDimension": { "type": "integer", "default": 2560 }
         }
+      },
+      "autoCapture": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable automatic memory capture at agent_end (default: false, 灰度原则)"
+      },
+      "autoRecall": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable automatic memory recall at before_prompt_build (default: false, 灰度原则)"
+      },
+      "captureMaxChars": {
+        "type": "integer",
+        "default": 500,
+        "description": "Maximum character length for auto-captured text (default: 500)"
+      },
+      "recallMaxChars": {
+        "type": "integer",
+        "default": 1000,
+        "description": "Maximum character length for recall query normalization (default: 1000)"
+      },
+      "customTriggers": {
+        "type": "array",
+        "items": { "type": "string" },
+        "default": [],
+        "description": "Custom trigger phrases for auto-capture (case-insensitive substring match)"
       }
     },
     "required": ["dbPath"]
