@@ -11,6 +11,8 @@ import { buildAllIndexes, updateMainIndex, } from '../wiki/wiki-index.js';
 import { syncBacklinks, } from '../wiki/wiki-sync-links.js';
 // W3 导入 (契约已冻结，按签名导入)
 import { queryGraph, buildWikiGraph, } from '../wiki/wiki-graph.js';
+// M6 导入 (digest compiler)
+import { compileDigest, ensureDigest, } from '../wiki/digest-compiler.js';
 // ============================================================================
 // Wiki Status Tool
 // ============================================================================
@@ -220,6 +222,18 @@ function createWikiBuildTool() {
             const input = params;
             // Call TS buildWikiGraph
             const buildResult = await buildWikiGraph();
+            // M6: Auto-compile digest after graph build
+            let digestResult;
+            try {
+                const digest = compileDigest({ force: true });
+                digestResult = {
+                    claimCount: digest.claimCount,
+                    pagesInDigest: digest.pages.length,
+                    compiledAt: digest.compiledAt,
+                };
+            } catch (e) {
+                digestResult = { error: String(e) };
+            }
             const result = {
                 graphPath: buildResult.graphPath,
                 reportPath: buildResult.reportPath,
@@ -228,6 +242,7 @@ function createWikiBuildTool() {
                 totalEdges: buildResult.analysis.totalEdges,
                 semanticEdges: buildResult.analysis.semanticEdges,
                 llmEnabled: input.semantic ?? false,
+                digest: digestResult,
                 source: 'typescript',
             };
             return {
@@ -283,11 +298,23 @@ function createWikiIndexTool() {
         execute: async () => {
             await buildAllIndexes();
             await updateMainIndex();
+            // M6: Ensure digest is fresh after index rebuild
+            let digestResult;
+            try {
+                const digest = ensureDigest({ force: false });
+                digestResult = {
+                    claimCount: digest.claimCount,
+                    pagesInDigest: digest.pages.length,
+                };
+            } catch (e) {
+                digestResult = { error: String(e) };
+            }
             // Count number of category indexes (5 categories)
             const indexesUpdated = 5 + 1; // 5 category indexes + 1 main index
             const result = {
                 message: "All Wiki indexes rebuilt",
                 indexesUpdated,
+                digest: digestResult,
                 source: 'typescript',
             };
             return {

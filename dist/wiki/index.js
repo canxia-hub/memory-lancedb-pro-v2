@@ -20,4 +20,6 @@ export { extractFrontMatter, extractHeadings, extractLinks, extractTags, extract
 export { loadGraph, queryGraph, buildWikiGraph, analyzeGraph, generateGraphReport, } from './wiki-graph.js';
 // Wiki Supplement (Batch B)
 export { createWikiCorpusSupplement, createWikiPromptSectionBuilder, } from './wiki-supplement.js';
+// Digest Compiler (M6 P0a-2)
+export { compileDigest, ensureDigest, isDigestFresh, } from './digest-compiler.js';
 //# sourceMappingURL=index.js.map
