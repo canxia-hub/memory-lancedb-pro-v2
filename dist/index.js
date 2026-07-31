@@ -39,6 +39,9 @@ import { registerAutoMemoryHooks } from './hooks/auto-memory.js';
 // M4: Dreaming engine
 import { createDreamingEngine } from './dreaming/engine.js';
 
+// M5: Doctor CLI registration
+import { registerDoctorCli } from './doctor/cli.js';
+
 /**
  * Plugin metadata
  */
@@ -132,6 +135,24 @@ function register(api) {
             api.logger.info('[memory-lancedb-pro] wiki CLI registered');
         } catch (error) {
             api.logger.error?.(`[memory-lancedb-pro] failed to register wiki CLI: ${error}`);
+        }
+    }
+
+    // M5: Doctor CLI
+    if (api.registerCli) {
+        try {
+            api.registerCli(({ program }) => {
+                registerDoctorCli(program, config, api.config);
+            }, {
+                descriptors: [{
+                    name: 'doctor',
+                    description: 'Memory LanceDB Pro doctor — schema validation & contamination cleanup',
+                    hasSubcommands: true,
+                }],
+            });
+            api.logger.info('[memory-lancedb-pro] doctor CLI registered');
+        } catch (error) {
+            api.logger.error?.(`[memory-lancedb-pro] failed to register doctor CLI: ${error}`);
         }
     }
 

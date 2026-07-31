@@ -91,6 +91,11 @@
           "storageDimension": { "type": "integer", "default": 2560 }
         }
       },
+      "storageOptions": {
+        "type": "object",
+        "additionalProperties": { "type": "string" },
+        "description": "Storage options for remote LanceDB (S3/etc); supports ${ENV_VAR} interpolation"
+      },
       "autoCapture": {
         "type": "boolean",
         "default": false,

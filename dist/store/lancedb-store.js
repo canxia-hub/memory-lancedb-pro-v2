@@ -155,12 +155,19 @@ export function createLanceDBStore(config) {
         const resolvedPath = validateStoragePath(config.dbPath);
 
         // 0.33: connect with readConsistencyInterval for cross-process visibility
+        // M5: Pass storageOptions for remote LanceDB (S3/etc) with ${ENV} interpolation
         const readConsistencyInterval = config.readConsistencyIntervalSeconds ?? 5;
+        const connectOpts = { readConsistencyInterval };
+        if (config.storageOptions && Object.keys(config.storageOptions).length > 0) {
+            if (config.connectionMode === 'embedded' && !resolvedPath.includes('://')) {
+                console.warn('[memory-lancedb-pro] storageOptions ignored in embedded mode (local path)');
+            } else {
+                connectOpts.storageOptions = config.storageOptions;
+            }
+        }
         let db;
         try {
-            db = await lancedb.connect(resolvedPath, {
-                readConsistencyInterval,
-            });
+            db = await lancedb.connect(resolvedPath, connectOpts);
         }
         catch (err) {
             throw new Error(`Failed to open LanceDB at "${resolvedPath}": ${err.code || ''} ${err.message}`);

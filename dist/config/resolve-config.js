@@ -5,6 +5,35 @@
  * Phase 0 minimal implementation - only essential config fields.
  */
 import { DEFAULT_CONFIG, DEFAULT_WIKI_VAULT_PATH, } from './schema.js';
+
+/**
+ * Resolve storageOptions with ${ENV_VAR} interpolation.
+ * Returns undefined if no storageOptions provided.
+ * Throws if an env var referenced in storageOptions is not set.
+ */
+function resolveStorageOptions(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return undefined;
+    }
+    const env = process.env;
+    return Object.fromEntries(
+        Object.entries(raw).map(([key, value]) => {
+            if (typeof value !== 'string') {
+                throw new Error(`storageOptions.${key} must be a string`);
+            }
+            return [
+                key,
+                value.replace(/\$\{([^}]+)\}/g, (_match, envName) => {
+                    const resolved = env[envName];
+                    if (!resolved) {
+                        throw new Error(`Environment variable ${envName} is not set (referenced in storageOptions.${key})`);
+                    }
+                    return resolved;
+                }),
+            ];
+        }),
+    );
+}
 /**
  * Resolve full plugin configuration with defaults.
  *
@@ -50,6 +79,7 @@ export function resolveConfig(input) {
         tableName: input.tableName ?? DEFAULT_CONFIG.tableName,
         embeddingDimension: input.embeddingDimension ?? DEFAULT_CONFIG.embeddingDimension,
         defaultScope: input.defaultScope ?? DEFAULT_CONFIG.defaultScope,
+        storageOptions: resolveStorageOptions(input.storageOptions),
         retrieval,
         hostInterop,
         // Phase C: Assets table and path defaults
