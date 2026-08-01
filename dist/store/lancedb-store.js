@@ -460,6 +460,52 @@ export function createLanceDBStore(config) {
                 metadata,
             });
         },
+        // Upstream-compatible vector search adapter for auto-recall hooks.
+        // Upstream calls db.search(agentId, vector, limit, minScore) against per-agent
+        // lanes; our deployment keeps shared scopes (default/global/...), so we search
+        // across ALL scopes (agentId is accepted for signature compatibility only).
+        // Returns upstream-shaped hits: { id, scope, text, content, category, score, metadata, source, timestamp }.
+        async search(agentId, vector, limit = 10, minScore = 0) {
+            await ensureInitialized();
+            if (!Array.isArray(vector) || vector.length === 0) return [];
+            const safeLimit = Math.max(1, limit ?? 10);
+            const threshold = typeof minScore === 'number' ? minScore : 0;
+            try {
+                const rows = await _table
+                    .search(vector)
+                    .limit(safeLimit * 2) // overfetch to allow minScore filtering
+                    .distanceType('cosine')
+                    .toArray();
+                const hits = [];
+                for (const row of rows) {
+                    const distance = Number(row._distance ?? 0);
+                    if (!Number.isFinite(distance)) continue; // zero-norm embeddings yield NaN
+                    const score = 1 / (1 + distance);
+                    if (score < threshold) continue;
+                    const record = mapRowToRecord(row);
+                    hits.push({
+                        id: record.id,
+                        scope: record.scope,
+                        text: record.content,
+                        content: record.content,
+                        category: record.category,
+                        importance: record.importance,
+                        score,
+                        metadata: record.metadata,
+                        source: record.metadata?.source ?? 'manual',
+                        timestamp: Date.parse(record.createdAt) || 0,
+                    });
+                    if (hits.length >= safeLimit) break;
+                }
+                return hits;
+            }
+            catch (err) {
+                // Defensive: native vector search failures (index/build issues)
+                // must not break the calling hook (fail-safe to empty recall).
+                console.warn(`[memory-lancedb-pro] store.search failed: ${err.message?.slice(0, 120)}`);
+                return [];
+            }
+        },
         async get(id, scope) {
             await ensureInitialized();
             const safeId = escapeSqlLiteral(id);
