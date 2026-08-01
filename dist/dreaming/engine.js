@@ -589,6 +589,9 @@ export function createDreamingEngine(deps) {
       const scopes = await resolveScopes(explicitScopes);
       result.scopes = scopes;
       debug(`memory-lancedb-pro: dreaming sweep started for scopes: ${scopes.join(', ')}`);
+      if (config.verboseLogging) {
+        deps.logger?.info?.(`memory-lancedb-pro: dreaming sweep started (scopes=${scopes.length})`);
+      }
 
       for (const scope of scopes) {
         if (stopped) break;
@@ -622,6 +625,12 @@ export function createDreamingEngine(deps) {
         `memory-lancedb-pro: dreaming sweep finished ` +
         `(changed=${Object.values(result.phases).reduce((sum, p) => sum + p.changed, 0)}, errors=${result.errors.length})`,
       );
+      if (config.verboseLogging) {
+        deps.logger?.info?.(
+          `memory-lancedb-pro: dreaming sweep finished (scopes=${result.scopes.length}, ` +
+          `changed=${Object.values(result.phases).reduce((sum, p) => sum + p.changed, 0)}, errors=${result.errors.length})`,
+        );
+      }
       return result;
     },
   };
