@@ -64,15 +64,29 @@
  */
 export function extractSectionMarkdown(markdown, heading) {
   const lines = markdown.split(/\r?\n/);
-  const headingNeedle = `## ${heading}`.toLowerCase();
+  const headingNeedle = heading.toLowerCase();
   let inSection = false;
+  let sectionLevel = 0;
   const collected = [];
   for (const raw of lines) {
     const line = raw.trim();
-    const lower = line.toLowerCase();
-    if (lower.startsWith('## ')) {
-      if (inSection && lower !== headingNeedle) break;
-      inSection = lower === headingNeedle;
+    // Accept headings of any level (##, ###, ####, ...) — the distiller prompt
+    // instructs h3 (###) while earlier fixtures used h2 (##).
+    // A section ends only at a heading of the SAME OR HIGHER level;
+    // deeper subheadings (e.g. ### Entry inside a ## section) stay as content.
+    const headingMatch = /^(#{2,6})\s+(.+?)\s*$/.exec(line);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const lowerHeading = headingMatch[2].toLowerCase();
+      if (lowerHeading === headingNeedle) {
+        if (inSection && level <= sectionLevel) break;
+        inSection = true;
+        sectionLevel = level;
+        continue;
+      }
+      if (inSection && level <= sectionLevel) break;
+      if (!inSection) continue;
+      collected.push(raw);
       continue;
     }
     if (!inSection) continue;
