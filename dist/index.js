@@ -250,7 +250,11 @@ function register(api) {
                     if (db.listEntries) return db.listEntries(scopes, category, limit, offset);
                     return [];
                 },
-                fetchForCompaction: undefined, // Will be available after store API extends
+                fetchForCompaction: async (beforeTimestamp, scopes, limit) => {
+                    const db = getStore();
+                    if (!db || !db.fetchForCompaction) return [];
+                    return db.fetchForCompaction(beforeTimestamp, scopes, limit);
+                },
                 patchMetadata: async (id, patch, scopes) => {
                     const db = getStore();
                     if (!db) return null;

@@ -356,6 +356,26 @@ export function createLanceDBStore(config) {
         }
     }
 
+    // Map MemoryRecord to dreaming-engine entry shape
+    // (upstream contract: text/timestamp(ms)/source/vector fields).
+    function mapRowToDreamingEntry(row) {
+        const record = mapRowToRecord(row);
+        return {
+            id: record.id,
+            scope: record.scope,
+            text: record.content,
+            content: record.content,
+            category: record.category,
+            importance: record.importance,
+            timestamp: Date.parse(record.createdAt) || 0,
+            createdAt: record.createdAt,
+            updatedAt: record.updatedAt,
+            metadata: record.metadata,
+            source: record.metadata?.source ?? 'manual',
+            vector: record.embedding,
+        };
+    }
+
     // Map raw row to MemoryRecord
     function mapRowToRecord(row) {
         const embedding = row.embedding ? Array.from(row.embedding) : null;
@@ -576,6 +596,74 @@ export function createLanceDBStore(config) {
             const offset = options?.offset ?? 0;
             const limit = options?.limit ?? 50;
             return records.slice(offset, offset + limit);
+        },
+        // ── Dreaming engine store API (M8) ─────────────────────────
+        // The dreaming engine (dist/dreaming/engine.js) expects upstream-shaped
+        // entries: { id, scope, text, category, importance, timestamp(ms), metadata, source, vector }.
+        // These four methods adapt our MemoryRecord model to that contract.
+        async listEntries(scopes, category, limit, offset) {
+            await ensureInitialized();
+            const scopeList = Array.isArray(scopes) && scopes.length > 0
+                ? scopes.map((s) => resolveScope(s)) : null;
+            const conditions = [];
+            if (scopeList) {
+                conditions.push(`scope IN (${scopeList.map((s) => `'${escapeSqlLiteral(s)}'`).join(', ')})`);
+            }
+            if (category) {
+                conditions.push(`category = '${escapeSqlLiteral(category)}'`);
+            }
+            let query = _table.query();
+            if (conditions.length > 0) {
+                query = query.where(conditions.join(' AND '));
+            }
+            const rows = await query.toArray();
+            const entries = rows.map(mapRowToDreamingEntry);
+            entries.sort((a, b) => b.timestamp - a.timestamp);
+            const safeOffset = Math.max(0, offset ?? 0);
+            const safeLimit = Math.max(1, limit ?? 50);
+            return entries.slice(safeOffset, safeOffset + safeLimit);
+        },
+        async fetchForCompaction(beforeTimestamp, scopes, limit) {
+            await ensureInitialized();
+            const scopeList = Array.isArray(scopes) && scopes.length > 0
+                ? scopes.map((s) => resolveScope(s)) : null;
+            let query = _table.query();
+            if (scopeList) {
+                query = query.where(`scope IN (${scopeList.map((s) => `'${escapeSqlLiteral(s)}'`).join(', ')})`);
+            }
+            const rows = await query.toArray();
+            const cutoff = typeof beforeTimestamp === 'number' ? beforeTimestamp : Number.POSITIVE_INFINITY;
+            const entries = rows
+                .map(mapRowToDreamingEntry)
+                .filter((entry) => entry.timestamp < cutoff)
+                .sort((a, b) => b.timestamp - a.timestamp);
+            return entries.slice(0, Math.max(1, limit ?? 100));
+        },
+        async patchMetadata(id, patch, scopes) {
+            await ensureInitialized();
+            const scope = Array.isArray(scopes) && scopes.length > 0 ? scopes[0] : undefined;
+            const existing = await this.get(id, scope);
+            if (!existing) return null;
+            const merged = { ...(existing.metadata ?? {}), ...(patch ?? {}) };
+            return this.update(id, { metadata: merged }, scope);
+        },
+        async stats(scopes) {
+            await ensureInitialized();
+            const rows = await _table.query().select(['scope']).toArray();
+            const scopeCounts = {};
+            for (const row of rows) {
+                const scope = row.scope ?? 'global';
+                scopeCounts[scope] = (scopeCounts[scope] ?? 0) + 1;
+            }
+            const totalCount = rows.length;
+            if (Array.isArray(scopes) && scopes.length > 0) {
+                const filtered = {};
+                for (const s of scopes) {
+                    filtered[s] = scopeCounts[s] ?? 0;
+                }
+                return { totalCount, scopeCounts: filtered };
+            }
+            return { totalCount, scopeCounts };
         },
         async status() {
             if (!_table) {
