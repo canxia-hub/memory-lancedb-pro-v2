@@ -421,6 +421,25 @@ export function createLanceDBStore(config) {
             }
             return mapRowToRecord(row);
         },
+        // Upstream-compatible agent-lane write adapter.
+        // Reflection/auto-memory hooks (ported from upstream) call db.store(agentId, payload)
+        // with payload shape { text, vector, importance, category, source, metadata }.
+        // Maps to create(): agentId -> scope (per-agent lane), text -> content, vector -> embedding,
+        // source is folded into metadata (no dedicated column in our schema).
+        async store(agentId, payload) {
+            const metadata = { ...(payload.metadata ?? {}) };
+            if (payload.source && metadata.source === undefined) {
+                metadata.source = payload.source;
+            }
+            return this.create({
+                content: payload.text ?? payload.content,
+                embedding: payload.vector ?? payload.embedding,
+                category: payload.category ?? 'other',
+                importance: payload.importance ?? 0.7,
+                scope: agentId,
+                metadata,
+            });
+        },
         async get(id, scope) {
             await ensureInitialized();
             const safeId = escapeSqlLiteral(id);
