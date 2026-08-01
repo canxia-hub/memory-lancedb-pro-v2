@@ -532,7 +532,7 @@ export function createDreamingEngine(deps) {
     sweepTimer = setTimeout(async () => {
       if (stopped || !config.enabled) return;
       try {
-        await runSweep();
+        await engine.runSweep();
       } catch (err) {
         deps.logger?.warn?.(`memory-lancedb-pro: dreaming sweep failed: ${String(err)}`);
       }
@@ -548,7 +548,7 @@ export function createDreamingEngine(deps) {
 
   // ── Public API ───────────────────────────────────────────────────
 
-  return {
+  const engine = {
     config,
 
     start() {
@@ -625,6 +625,7 @@ export function createDreamingEngine(deps) {
       return result;
     },
   };
+  return engine;
 }
 
 // ── Re-exports for testing ─────────────────────────────────────────────
