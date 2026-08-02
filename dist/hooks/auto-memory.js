@@ -43,6 +43,11 @@ const DEFAULT_AUTO_RECALL_OVERFETCH_LIMIT = 10;
 const DEFAULT_AUTO_RECALL_RESULT_CAP = 3;
 const MAX_CAPTURE_PER_TURN = 3;
 
+/** Minimum relevance score for auto-recall injection.
+ *  score = 1/(1+cosine_distance); 0.7 ≈ cosine similarity ≥0.57.
+ *  Below threshold → no injection at all (prevents floor-effect junk). */
+const DEFAULT_RECALL_MIN_SCORE = 0.7;
+
 /** Reflection distiller timeout (ms). */
 const DEFAULT_REFLECTION_DISTILLER_TIMEOUT_MS = 30_000;
 
@@ -106,6 +111,7 @@ function resolveHookConfig(pluginConfig) {
     autoRecall: pluginConfig.autoRecall ?? false,
     captureMaxChars: pluginConfig.captureMaxChars ?? DEFAULT_CAPTURE_MAX_CHARS,
     recallMaxChars: pluginConfig.recallMaxChars ?? DEFAULT_RECALL_MAX_CHARS,
+    recallMinScore: pluginConfig.recallMinScore ?? DEFAULT_RECALL_MIN_SCORE,
     customTriggers: pluginConfig.customTriggers ?? [],
   };
 }
@@ -176,7 +182,7 @@ export function registerAutoMemoryHooks(api, deps) {
         task: async () => {
           const vector = await embedder.embed(recallQuery);
           // Overfetch to compensate for sludge filtering
-          return await db.search(agentId, vector, DEFAULT_AUTO_RECALL_OVERFETCH_LIMIT, 0.3);
+          return await db.search(agentId, vector, DEFAULT_AUTO_RECALL_OVERFETCH_LIMIT, cfg.recallMinScore);
         },
       });
 

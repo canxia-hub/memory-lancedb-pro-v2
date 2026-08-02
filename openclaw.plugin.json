@@ -116,6 +116,13 @@
         "default": 1000,
         "description": "Maximum character length for recall query normalization (default: 1000)"
       },
+      "recallMinScore": {
+        "type": "number",
+        "default": 0.7,
+        "minimum": 0,
+        "maximum": 1,
+        "description": "Minimum relevance score for auto-recall injection (score=1/(1+cosine_distance); 0.7≈cosine similarity ≥0.57). Below threshold → no injection at all."
+      },
       "customTriggers": {
         "type": "array",
         "items": { "type": "string" },
