@@ -33,8 +33,15 @@ import {
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const DEFAULT_DISTILLER_TIMEOUT_MS = 30_000;
+const DEFAULT_DISTILLER_TIMEOUT_MS = 45_000;
 const REFLECTION_SESSION_KEY_PREFIX = 'temp:memory-reflection:';
+
+// Prompt bounds: uncapped conversation dumps (observed 436KB on 2026-08-03)
+// blow the embedded run's time budget. Cap per-message and total chars,
+// keeping the most recent messages (session deltas live at the tail).
+const MAX_PROMPT_MESSAGE_CHARS = 8_000;
+const MAX_PROMPT_CONVERSATION_CHARS = 60_000;
+const MESSAGE_TRUNCATION_MARKER = '\n[\u2026 message truncated to bound prompt size \u2026]';
 
 /**
  * Reflection prompt template for the distiller sub-session.
@@ -229,10 +236,29 @@ export function buildReflectionPrompt(messages) {
         .join('\n');
     }
     if (text) {
+      if (text.length > MAX_PROMPT_MESSAGE_CHARS) {
+        text = text.slice(0, MAX_PROMPT_MESSAGE_CHARS) + MESSAGE_TRUNCATION_MARKER;
+      }
       conversationLines.push(`[${role}]: ${text}`);
     }
   }
-  return REFLECTION_DISTILLER_PROMPT + conversationLines.join('\n\n');
+  // Total cap: keep the newest lines within budget, drop the oldest.
+  const kept = [];
+  let total = 0;
+  let dropped = 0;
+  for (let i = conversationLines.length - 1; i >= 0; i--) {
+    const line = conversationLines[i];
+    if (kept.length > 0 && total + line.length > MAX_PROMPT_CONVERSATION_CHARS) {
+      dropped = i + 1;
+      break;
+    }
+    kept.unshift(line);
+    total += line.length;
+  }
+  const omittedNote = dropped > 0
+    ? `[\u2026 ${dropped} earlier message(s) omitted to bound prompt size \u2026]\n\n`
+    : '';
+  return REFLECTION_DISTILLER_PROMPT + omittedNote + kept.join('\n\n');
 }
 
 /**

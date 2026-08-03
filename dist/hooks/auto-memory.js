@@ -49,7 +49,7 @@ const MAX_CAPTURE_PER_TURN = 3;
 const DEFAULT_RECALL_MIN_SCORE = 0.7;
 
 /** Reflection distiller timeout (ms). */
-const DEFAULT_REFLECTION_DISTILLER_TIMEOUT_MS = 30_000;
+const DEFAULT_REFLECTION_DISTILLER_TIMEOUT_MS = 45_000;
 
 /**
  * Session key prefixes that indicate plugin-internal sub-sessions.
