@@ -447,7 +447,14 @@ export function createLanceDBStore(config) {
         // Maps to create(): agentId -> scope (per-agent lane), text -> content, vector -> embedding,
         // source is folded into metadata (no dedicated column in our schema).
         async store(agentId, payload) {
-            const metadata = { ...(payload.metadata ?? {}) };
+            // Defensive: upstream dreaming engine passes metadata as a JSON
+            // string (stringifySmartMetadata). Spreading a string would
+            // produce char-indexed mangled metadata ({0:'{',1:'"',...}).
+            let metadata = payload.metadata ?? {};
+            if (typeof metadata === 'string') {
+                try { metadata = JSON.parse(metadata); } catch { metadata = {}; }
+            }
+            metadata = { ...metadata };
             if (payload.source && metadata.source === undefined) {
                 metadata.source = payload.source;
             }
@@ -546,7 +553,9 @@ export function createLanceDBStore(config) {
                     importance: updates.importance ?? existing.importance,
                     createdAt: existing.createdAt, // Preserve original createdAt
                     updatedAt: now,
-                    metadata: JSON.stringify(updates.metadata ?? existing.metadata),
+                    // Defensive: upstream dreaming deep phase passes metadata
+                    // pre-stringified; avoid double-encoding it.
+                    metadata: typeof updates.metadata === 'string' ? updates.metadata : JSON.stringify(updates.metadata ?? existing.metadata),
                 };
                 // 0.33: Use mergeInsert for atomic upsert (replaces delete+add)
                 // mergeInsert on 'id' key: when matched → update all, when not matched → insert
@@ -690,7 +699,13 @@ export function createLanceDBStore(config) {
             const scope = Array.isArray(scopes) && scopes.length > 0 ? scopes[0] : undefined;
             const existing = await this.get(id, scope);
             if (!existing) return null;
-            const merged = { ...(existing.metadata ?? {}), ...(patch ?? {}) };
+            // Defensive: legacy double-encoded rows parse to a string;
+            // spreading a string would char-mangle the merged metadata.
+            let base = existing.metadata ?? {};
+            if (typeof base === 'string') {
+                try { base = JSON.parse(base); } catch { base = {}; }
+            }
+            const merged = { ...base, ...(patch ?? {}) };
             return this.update(id, { metadata: merged }, scope);
         },
         async stats(scopes) {
