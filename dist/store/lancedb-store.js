@@ -10,7 +10,7 @@
  * - BITMAP scalar indexes on scope/category columns
  */
 import { normalizeScope, DEFAULT_SCOPE } from './scope-manager.js';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { existsSync, mkdirSync, accessSync, constants, lstatSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { embedMultimodal } from '../retrieval/embedder.js';
@@ -107,6 +107,15 @@ function validateStoragePath(dbPath) {
  * @param config - Backend configuration
  * @returns Store instance
  */
+/**
+ * Stable recall-query identity for access tracking: hash of the normalized
+ * query text. Same question text -> same id (dedupes into unique_query_count);
+ * different phrasing -> new id. Used by recordAccess call sites.
+ */
+export function computeRecallQueryId(query) {
+    const normalized = String(query ?? '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 512);
+    return createHash('sha256').update(normalized).digest('hex').slice(0, 16);
+}
 export function createLanceDBStore(config) {
     // Internal state
     let _connected = false;
@@ -707,6 +716,40 @@ export function createLanceDBStore(config) {
             }
             const merged = { ...base, ...(patch ?? {}) };
             return this.update(id, { metadata: merged }, scope);
+        },
+        // ── Access tracking (dreaming deep-promotion signals) ──────────
+        // Increments access_count / last_accessed_at and maintains a bounded
+        // set of recall query ids so the dreaming deep phase can compute
+        // unique-query counts. Fire-and-forget from recall paths; per-id
+        // failures are swallowed (non-fatal for the recall hot path).
+        async recordAccess(ids, queryId) {
+            await ensureInitialized();
+            if (!Array.isArray(ids) || ids.length === 0) return 0;
+            const MAX_QUERY_IDS = 100;
+            const nowMs = Date.now();
+            let updated = 0;
+            for (const id of ids) {
+                try {
+                    const existing = await this.get(id);
+                    if (!existing) continue;
+                    let md = existing.metadata ?? {};
+                    if (typeof md === 'string') {
+                        try { md = JSON.parse(md); } catch { md = {}; }
+                    }
+                    const prevIds = Array.isArray(md.recall_query_ids) ? md.recall_query_ids.filter(x => typeof x === 'string') : [];
+                    const nextIds = prevIds.includes(queryId) ? prevIds : [...prevIds, queryId].slice(-MAX_QUERY_IDS);
+                    const merged = {
+                        ...md,
+                        access_count: (typeof md.access_count === 'number' && Number.isFinite(md.access_count) ? md.access_count : 0) + 1,
+                        last_accessed_at: nowMs,
+                        recall_query_ids: nextIds,
+                        unique_query_count: nextIds.length,
+                    };
+                    const res = await this.update(id, { metadata: merged }, existing.scope);
+                    if (res) updated++;
+                } catch { /* non-fatal: access tracking must never break recall */ }
+            }
+            return updated;
         },
         async stats(scopes) {
             await ensureInitialized();

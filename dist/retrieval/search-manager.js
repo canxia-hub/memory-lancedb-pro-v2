@@ -10,8 +10,8 @@
  * IMPORTANT: Must use frozen MemorySearchResult type from types/memory-search-result.ts.
  * Must NOT redefine public shared-search shape.
  */
-import { createLanceDBStore } from '../store/lancedb-store.js';
-import { normalizeScope, DEFAULT_SCOPE } from '../store/scope-manager.js';
+import { createLanceDBStore, computeRecallQueryId } from '../store/lancedb-store.js';
+import { normalizeScope, DEFAULT_SCOPE, parseMemoryPath } from '../store/scope-manager.js';
 import { createHybridRetriever } from './hybrid-retriever.js';
 import { createDefaultRerankManager } from './rerank.js';
 import { buildEmbeddingAvailability as buildDashScopeEmbeddingAvailability } from './embedder.js';
@@ -210,6 +210,21 @@ export function createSearchManager(config, backendConfig, externalStore // Opti
             };
             // Get candidates from retriever
             const candidates = await _retriever.retrieve(retrieverOptions);
+            // Access tracking (fire-and-forget): feed dreaming deep-promotion
+            // signals (access_count / unique_query_count). Never blocks search.
+            // Frozen contract forbids exposing ids in results, so parse them
+            // from memory://<scope>/<id> paths.
+            try {
+                if (typeof store.recordAccess === 'function' && candidates.length > 0) {
+                    const ids = candidates
+                        .map((c) => parseMemoryPath(c.path)?.id)
+                        .filter((x) => typeof x === 'string' && x.length > 0);
+                    if (ids.length > 0) {
+                        store.recordAccess(ids, computeRecallQueryId(query))
+                            .catch(() => { /* non-fatal */ });
+                    }
+                }
+            } catch { /* non-fatal */ }
             // Apply rerank if enabled
             if (config.retrieval.rerank && candidates.length > 0) {
                 const rerankResult = await rerankManager.rerank(candidates, {

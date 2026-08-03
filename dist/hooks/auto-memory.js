@@ -28,6 +28,7 @@ import {
   formatRelevantMemoriesContext,
 } from '../capture/prompt-defense.js';
 import { findCleanDuplicateMemory } from '../capture/dedup.js';
+import { computeRecallQueryId } from '../store/lancedb-store.js';
 import {
   normalizeReflectionConfig,
   runReflectionPipeline,
@@ -187,13 +188,27 @@ export function registerAutoMemoryHooks(api, deps) {
       });
 
       // Filter contaminated memories, then cap
-      const cleanResults = cleanMemorySearchResults(recall)
+      const cleaned = cleanMemorySearchResults(recall);
+      const cleanResults = cleaned
         .map(({ result, text }) => ({ category: (result.entry ?? result).category ?? 'other', text }))
         .slice(0, DEFAULT_AUTO_RECALL_RESULT_CAP);
 
       if (cleanResults.length === 0) return undefined;
 
       api.logger.info?.(`[memory-lancedb-pro] auto-recall: injecting ${cleanResults.length} memories into context`);
+
+      // Access tracking (fire-and-forget): feed dreaming deep-promotion
+      // signals (access_count / unique_query_count). Never blocks injection.
+      try {
+        const recalledIds = cleaned
+          .map(({ result }) => result?.id ?? result?.entry?.id)
+          .filter((x) => typeof x === 'string' && x.length > 0)
+          .slice(0, DEFAULT_AUTO_RECALL_RESULT_CAP);
+        if (recalledIds.length > 0 && typeof db.recordAccess === 'function') {
+          db.recordAccess(recalledIds, computeRecallQueryId(recallQuery))
+            .catch((err) => api.logger.warn?.(`[memory-lancedb-pro] access tracking failed: ${String(err)}`));
+        }
+      } catch { /* non-fatal */ }
 
       const context = formatRelevantMemoriesContext(cleanResults);
       if (!context) return undefined;
