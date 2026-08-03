@@ -5,10 +5,14 @@
  * No host integration - only logic.
  */
 /**
- * Valid scope format: alphanumeric with hyphens/underscores, lowercase.
- * Examples: 'default', 'agent-main', 'my_scope'
+ * Valid scope format: alphanumeric with hyphens/underscores/colons, lowercase.
+ * Examples: 'default', 'agent-main', 'my_scope', 'agent:main'
+ * Colons allowed: agent lanes use 'agent:<id>' — legacy production rows
+ * already carry such scopes (dreaming resolveScopes enumerates them from
+ * DB distinct values; rejecting colons silently rerouted every agent-lane
+ * sweep to 'default').
  */
-const SCOPE_PATTERN = /^[a-z][a-z0-9_-]*$/;
+const SCOPE_PATTERN = /^[a-z][a-z0-9_:-]*$/;
 /**
  * Default scope when none provided.
  */
