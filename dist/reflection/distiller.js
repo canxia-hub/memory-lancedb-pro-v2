@@ -33,7 +33,12 @@ import {
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const DEFAULT_DISTILLER_TIMEOUT_MS = 45_000;
+// 2026-08-04: raised 45s -> 120s. Post-cap prompts (<=60k chars) still timed out
+// on FIRST runs after idle: embedded run cold-start (provider model load +
+// session bootstrap) exceeded 45s; the warm retry then finished in seconds.
+// 120s covers observed worst case (~50s) with 2.4x headroom; retry-once remains
+// as second layer. embeddedTimeoutMs derives from this (+5s).
+const DEFAULT_DISTILLER_TIMEOUT_MS = 120_000;
 const REFLECTION_SESSION_KEY_PREFIX = 'temp:memory-reflection:';
 
 // Prompt bounds: uncapped conversation dumps (observed 436KB on 2026-08-03)

@@ -48,8 +48,8 @@ const MAX_CAPTURE_PER_TURN = 3;
  *  Below threshold → no injection at all (prevents floor-effect junk). */
 const DEFAULT_RECALL_MIN_SCORE = 0.7;
 
-/** Reflection distiller timeout (ms). */
-const DEFAULT_REFLECTION_DISTILLER_TIMEOUT_MS = 45_000;
+/** Reflection distiller timeout (ms). See distiller.js for the 120s rationale (cold-start headroom). */
+const DEFAULT_REFLECTION_DISTILLER_TIMEOUT_MS = 120_000;
 
 /**
  * Session key prefixes that indicate plugin-internal sub-sessions.
