@@ -329,7 +329,12 @@ export function registerAutoMemoryHooks(api, deps) {
         release();
       }
     }
-  });
+    // Hook-runner budget: default agent_end void-hook timeout is only 30s
+    // (DEFAULT_VOID_HOOK_TIMEOUT_MS_BY_HOOK). The runner never cancels us
+    // (Promise.race detach), but it logs a spurious timeout warn. Raise the
+    // budget above the distiller worst case (120s internal + one retry)
+    // so the runner-side warn only fires on genuine pathology.
+  }, { timeoutMs: 300_000 });
 
   // ── session_end: cursor cleanup + reflection cache cleanup ────────
   api.on('session_end', (event, ctx) => {
