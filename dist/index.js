@@ -318,11 +318,10 @@ export { ARTIFACT_PATHS, listPublicArtifacts, hasStandardArtifacts, getArtifactC
 export { ALLOWED_EVENT_TYPES, isValidEventType, createHostEventsManager, createRecallRecordedEvent, createPromotionAppliedEvent } from './interop/host-events.js';
 export { getCapability, getEvents };
 
-// M2: Capture/Policy/Prompt-Defense exports
-export { looksLikeEnvelopeSludge, sanitizeForMemoryCapture, dropMediaNoteLines } from './capture/sanitization.js';
-export { shouldCapture, detectCategory, normalizeRecallQuery, extractLatestUserText, messageFingerprint, resolveAutoCaptureStartIndex, DEFAULT_CAPTURE_MAX_CHARS, DEFAULT_RECALL_MAX_CHARS } from './capture/policy.js';
+// M2: Policy/Prompt-Defense exports (capture removed 2026-08-04)
+export { looksLikeEnvelopeSludge, dropMediaNoteLines } from './capture/sanitization.js';
+export { normalizeRecallQuery, extractLatestUserText, DEFAULT_RECALL_MAX_CHARS } from './capture/policy.js';
 export { looksLikePromptInjection, escapeMemoryForPrompt, formatRelevantMemoriesContext, cleanMemorySearchResults } from './capture/prompt-defense.js';
-export { findCleanDuplicateMemory } from './capture/dedup.js';
 export { registerAutoMemoryHooks, resolveHookConfig, isMemorySubSession } from './hooks/auto-memory.js';
 
 // M4: Dreaming engine exports

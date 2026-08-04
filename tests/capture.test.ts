@@ -305,25 +305,21 @@ describe("resolveHookConfig", () => {
   it("applies defaults when config is empty", async () => {
     const { resolveHookConfig } = await import("../dist/hooks/auto-memory.js");
     const cfg = resolveHookConfig({});
-    expect(cfg.autoCapture).toBe(false);
     expect(cfg.autoRecall).toBe(false);
-    expect(cfg.captureMaxChars).toBe(500);
     expect(cfg.recallMaxChars).toBe(1000);
-    expect(cfg.customTriggers).toEqual([]);
+    expect(cfg.recallMinScore).toBe(0.7);
   });
 
   it("overrides with provided values", async () => {
     const { resolveHookConfig } = await import("../dist/hooks/auto-memory.js");
     const cfg = resolveHookConfig({
-      autoCapture: true,
       autoRecall: true,
-      captureMaxChars: 1000,
-      customTriggers: ["save"],
+      recallMaxChars: 500,
+      recallMinScore: 0.8,
     });
-    expect(cfg.autoCapture).toBe(true);
     expect(cfg.autoRecall).toBe(true);
-    expect(cfg.captureMaxChars).toBe(1000);
-    expect(cfg.customTriggers).toEqual(["save"]);
+    expect(cfg.recallMaxChars).toBe(500);
+    expect(cfg.recallMinScore).toBe(0.8);
   });
 });
 

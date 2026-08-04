@@ -13,7 +13,10 @@
       },
       "connectionMode": {
         "type": "string",
-        "enum": ["embedded", "remote"],
+        "enum": [
+          "embedded",
+          "remote"
+        ],
         "default": "embedded",
         "description": "Connection mode: embedded (local) or remote (server)"
       },
@@ -40,76 +43,129 @@
       "retrieval": {
         "type": "object",
         "properties": {
-          "hybrid": { "type": "boolean", "default": true },
-          "rerank": { "type": "boolean", "default": false },
+          "hybrid": {
+            "type": "boolean",
+            "default": true
+          },
+          "rerank": {
+            "type": "boolean",
+            "default": false
+          },
           "rerankProvider": {
             "type": "string",
-            "enum": ["none", "dashscope"],
+            "enum": [
+              "none",
+              "dashscope"
+            ],
             "default": "none"
           },
-          "rerankModel": { "type": "string", "default": "qwen3-vl-rerank" },
+          "rerankModel": {
+            "type": "string",
+            "default": "qwen3-vl-rerank"
+          },
           "rerankBaseUrl": {
             "type": "string",
             "default": "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank"
           },
-          "rerankApiKeyEnv": { "type": "string", "default": "DASHSCOPE_API_KEY" },
-          "fts": { "type": "boolean", "default": true, "description": "Enable FTS full-text search index" }
+          "rerankApiKeyEnv": {
+            "type": "string",
+            "default": "DASHSCOPE_API_KEY"
+          },
+          "fts": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable FTS full-text search index"
+          }
         }
       },
       "hostInterop": {
         "type": "object",
         "properties": {
-          "enableArtifacts": { "type": "boolean", "default": true },
-          "enableEvents": { "type": "boolean", "default": true }
+          "enableArtifacts": {
+            "type": "boolean",
+            "default": true
+          },
+          "enableEvents": {
+            "type": "boolean",
+            "default": true
+          }
         }
       },
-      "assetsTableName": { "type": "string", "default": "memory_assets" },
-      "assetsPath": { "type": "string", "description": "Assets directory path" },
+      "assetsTableName": {
+        "type": "string",
+        "default": "memory_assets"
+      },
+      "assetsPath": {
+        "type": "string",
+        "description": "Assets directory path"
+      },
       "vault": {
         "type": "object",
-        "properties": { "path": { "type": "string", "description": "Wiki vault path" } }
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Wiki vault path"
+          }
+        }
       },
       "context": {
         "type": "object",
-        "properties": { "includeCompiledDigestPrompt": { "type": "boolean", "default": false } }
+        "properties": {
+          "includeCompiledDigestPrompt": {
+            "type": "boolean",
+            "default": false
+          }
+        }
       },
       "obsidian": {
         "type": "object",
-        "properties": { "enabled": { "type": "boolean", "default": false } }
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": false
+          }
+        }
       },
       "embedding": {
         "type": "object",
         "properties": {
-          "provider": { "type": "string", "default": "dashscope" },
-          "model": { "type": "string", "default": "tongyi-embedding-vision-flash-2026-03-06" },
+          "provider": {
+            "type": "string",
+            "default": "dashscope"
+          },
+          "model": {
+            "type": "string",
+            "default": "tongyi-embedding-vision-flash-2026-03-06"
+          },
           "baseUrl": {
             "type": "string",
             "default": "https://dashscope.aliyuncs.com/api/v1/services/embeddings/multimodal-embedding/multimodal-embedding"
           },
-          "apiKeyEnv": { "type": "string", "default": "DASHSCOPE_API_KEY" },
-          "nativeDimension": { "type": "integer", "default": 768 },
-          "storageDimension": { "type": "integer", "default": 2560 }
+          "apiKeyEnv": {
+            "type": "string",
+            "default": "DASHSCOPE_API_KEY"
+          },
+          "nativeDimension": {
+            "type": "integer",
+            "default": 768
+          },
+          "storageDimension": {
+            "type": "integer",
+            "default": 2560
+          }
         }
       },
       "storageOptions": {
         "type": "object",
-        "additionalProperties": { "type": "string" },
+        "additionalProperties": {
+          "type": "string"
+        },
         "description": "Storage options for remote LanceDB (S3/etc); supports ${ENV_VAR} interpolation"
-      },
-      "autoCapture": {
-        "type": "boolean",
-        "default": false,
-        "description": "Enable automatic memory capture at agent_end (default: false, 灰度原则)"
       },
       "autoRecall": {
         "type": "boolean",
         "default": false,
         "description": "Enable automatic memory recall at before_prompt_build (default: false, 灰度原则)"
-      },
-      "captureMaxChars": {
-        "type": "integer",
-        "default": 500,
-        "description": "Maximum character length for auto-captured text (default: 500)"
       },
       "recallMaxChars": {
         "type": "integer",
@@ -122,12 +178,6 @@
         "minimum": 0,
         "maximum": 1,
         "description": "Minimum relevance score for auto-recall injection (score=1/(1+cosine_distance); 0.7≈cosine similarity ≥0.57). Below threshold → no injection at all."
-      },
-      "customTriggers": {
-        "type": "array",
-        "items": { "type": "string" },
-        "default": [],
-        "description": "Custom trigger phrases for auto-capture (case-insensitive substring match)"
       },
       "dreaming": {
         "type": "object",
@@ -160,34 +210,109 @@
               "light": {
                 "type": "object",
                 "properties": {
-                  "enabled": { "type": "boolean", "default": true },
-                  "lookbackDays": { "type": "integer", "default": 2, "minimum": 0 },
-                  "limit": { "type": "integer", "default": 100, "minimum": 0 },
-                  "dedupeSimilarity": { "type": "number", "default": 0.92, "minimum": 0, "maximum": 1 },
-                  "sources": { "type": "array", "items": { "type": "string" } }
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "lookbackDays": {
+                    "type": "integer",
+                    "default": 2,
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "default": 100,
+                    "minimum": 0
+                  },
+                  "dedupeSimilarity": {
+                    "type": "number",
+                    "default": 0.92,
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
                 }
               },
               "deep": {
                 "type": "object",
                 "properties": {
-                  "enabled": { "type": "boolean", "default": true },
-                  "limit": { "type": "integer", "default": 10, "minimum": 0 },
-                  "minScore": { "type": "number", "default": 0.6, "minimum": 0, "maximum": 1 },
-                  "minRecallCount": { "type": "integer", "default": 3, "minimum": 0 },
-                  "minUniqueQueries": { "type": "integer", "default": 0, "minimum": 0 },
-                  "recencyHalfLifeDays": { "type": "integer", "default": 14, "minimum": 1 },
-                  "maxAgeDays": { "type": "integer", "default": 90, "minimum": 1 },
-                  "sources": { "type": "array", "items": { "type": "string" } }
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "default": 10,
+                    "minimum": 0
+                  },
+                  "minScore": {
+                    "type": "number",
+                    "default": 0.6,
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "minRecallCount": {
+                    "type": "integer",
+                    "default": 3,
+                    "minimum": 0
+                  },
+                  "minUniqueQueries": {
+                    "type": "integer",
+                    "default": 0,
+                    "minimum": 0
+                  },
+                  "recencyHalfLifeDays": {
+                    "type": "integer",
+                    "default": 14,
+                    "minimum": 1
+                  },
+                  "maxAgeDays": {
+                    "type": "integer",
+                    "default": 90,
+                    "minimum": 1
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
                 }
               },
               "rem": {
                 "type": "object",
                 "properties": {
-                  "enabled": { "type": "boolean", "default": true },
-                  "lookbackDays": { "type": "integer", "default": 7, "minimum": 0 },
-                  "limit": { "type": "integer", "default": 10, "minimum": 0 },
-                  "minPatternStrength": { "type": "number", "default": 0.6, "minimum": 0, "maximum": 1 },
-                  "sources": { "type": "array", "items": { "type": "string" } }
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "lookbackDays": {
+                    "type": "integer",
+                    "default": 7,
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "default": 10,
+                    "minimum": 0
+                  },
+                  "minPatternStrength": {
+                    "type": "number",
+                    "default": 0.6,
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "sources": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
@@ -204,7 +329,10 @@
             "description": "Enable reflection distiller at agent_end (default: false, 灰度原则)"
           },
           "distillerModel": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "default": null,
             "description": "Model for distiller sub-session (null=follow agent default model)"
           },
@@ -228,18 +356,26 @@
           },
           "admissionPreset": {
             "type": "string",
-            "enum": ["balanced", "conservative", "high-recall"],
+            "enum": [
+              "balanced",
+              "conservative",
+              "high-recall"
+            ],
             "default": "balanced",
             "description": "Admission control preset for mapped reflection entries"
           }
         }
       }
     },
-    "required": ["dbPath"]
+    "required": [
+      "dbPath"
+    ]
   },
   "activation": {
     "onStartup": true,
-    "onCommands": ["wiki"]
+    "onCommands": [
+      "wiki"
+    ]
   },
   "hooks": {
     "timeoutMs": 60000
@@ -267,6 +403,8 @@
     ]
   },
   "commandAliases": [
-    { "name": "wiki" }
+    {
+      "name": "wiki"
+    }
   ]
 }
