@@ -229,6 +229,10 @@ export function registerAutoMemoryHooks(api, deps) {
 
   // ── agent_end: auto-capture + reflection distiller ────────────────
   api.on('agent_end', async (event, ctx) => {
+    // PROBE (2026-08-04): main-session agent_end has been silent since the
+    // 08:19 restart while cron sessions receive events. First-line probe to
+    // distinguish "gateway never dispatched" from "handler silently skips".
+    api.logger.info?.(`[memory-lancedb-pro] AGENT_END-PROBE sessionKey=${ctx?.sessionKey} agentId=${ctx?.agentId} success=${event?.success} msgs=${Array.isArray(event?.messages) ? event.messages.length : -1}`);
     const cfg = resolveHookConfig(pluginConfig);
     const agentId = normalizeAgentId(ctx.agentId);
     const isSubSession = isMemorySubSession(ctx.sessionKey);
