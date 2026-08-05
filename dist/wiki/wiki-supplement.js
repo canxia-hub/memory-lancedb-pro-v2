@@ -17,6 +17,9 @@ import { queryGraph } from './wiki-graph.js';
 const AGENT_DIGEST_PATH = '.openclaw-wiki/cache/agent-digest.json';
 const DIGEST_MAX_PAGES = 4;
 const DIGEST_MAX_CLAIMS_PER_PAGE = 2;
+// Heading-only "Topic:" claims are useful for coverage counting, but too low-signal
+// to spend prompt tokens on when a first-paragraph claim exists.
+const LOW_SIGNAL_CLAIM_PATTERN = /^\s*Topic:\s*/i;
 
 // ============================================================================
 // Vault-Path-Independent Helpers
@@ -275,6 +278,9 @@ function rankPromptClaimFreshness(level) {
 
 function sortPromptClaims(claims) {
   return [...claims].sort((left, right) => {
+    const lLow = LOW_SIGNAL_CLAIM_PATTERN.test(left.text ?? '') ? 1 : 0;
+    const rLow = LOW_SIGNAL_CLAIM_PATTERN.test(right.text ?? '') ? 1 : 0;
+    if (lLow !== rLow) return lLow - rLow;
     const lc = typeof left.confidence === 'number' ? left.confidence : -1;
     const rc = typeof right.confidence === 'number' ? right.confidence : -1;
     if (lc !== rc) return rc - lc;
@@ -326,7 +332,10 @@ function buildDigestPromptSection(vaultPath) {
       (page.contradictions?.length ?? 0) > 0 ? `${page.contradictions.length} contradiction notes` : null,
     ].filter(Boolean);
     lines.push(`- ${page.title}: ${details.join(', ')}`);
-    for (const claim of sortPromptClaims(page.topClaims ?? []).slice(0, DIGEST_MAX_CLAIMS_PER_PAGE)) {
+    const promptClaims = sortPromptClaims(page.topClaims ?? [])
+      .filter((claim) => !LOW_SIGNAL_CLAIM_PATTERN.test(claim.text ?? ''))
+      .slice(0, DIGEST_MAX_CLAIMS_PER_PAGE);
+    for (const claim of promptClaims) {
       lines.push(`  - ${formatPromptClaim(claim)}`);
     }
   }

@@ -47,8 +47,10 @@ export const DEFAULT_CONFIG = {
     },
 };
 /**
- * Default wiki vault path for v2 (Batch B)
- * Compatible with existing openclaw.json memory-wiki path pattern
+ * Default wiki vault path for v3 prompt/corpus supplements.
+ * Align with wiki-store WIKI_ROOT so tools, corpus supplement, and compiled digest
+ * read the same vault by default. Can still be overridden by config.vault.path.
  */
-export const DEFAULT_WIKI_VAULT_PATH = 'C:\\Users\\Administrator\\.openclaw\\wiki\\memory-vaults\\memory-lancedb-pro-v2';
+export const DEFAULT_WIKI_VAULT_PATH = process.env.WIKI_ROOT
+    || 'C:\\Users\\Administrator\\.openclaw\\wiki';
 //# sourceMappingURL=schema.js.map

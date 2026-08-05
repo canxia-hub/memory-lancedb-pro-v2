@@ -217,6 +217,43 @@ describe("Wiki Digest Compiler (M6 P0a-2)", () => {
     }
   });
 
+  it("compileDigest does not treat issue/mitigation sections as contradictions", () => {
+    const issueVault = path.join(os.tmpdir(), `wiki-issue-vault-${Date.now()}`);
+    fs.mkdirSync(path.join(issueVault, "references"), { recursive: true });
+    try {
+      const now = new Date().toISOString().replace("Z", "+08:00");
+      fs.writeFileSync(path.join(issueVault, "references", "issue-mitigation.md"), [
+        "---",
+        "title: Issue Mitigation Page",
+        "category: references",
+        "status: stable",
+        "confidence: 0.8",
+        `created: ${now}`,
+        `updated: ${now}`,
+        "---",
+        "",
+        "# Issue Mitigation Page",
+        "",
+        "Concrete mitigation guidance that should remain a normal claim.",
+        "",
+        "### 音色与提示词不一致",
+        "",
+        "模型可能不完全匹配所选说话人。",
+        "",
+        "**缓解**：",
+        "- 选择天然适合角色的音色",
+        "- 保持请求的人格与音色原生风格一致",
+        "",
+      ].join("\n"), "utf8");
+
+      const digest = compileDigest({ vaultPath: issueVault, dryRun: true });
+      expect(digest.pages.length).toBe(1);
+      expect(digest.pages[0].contradictions).toEqual([]);
+    } finally {
+      fs.rmSync(issueVault, { recursive: true, force: true });
+    }
+  });
+
   it("compileDigest writes agent-digest.json when not dryRun", () => {
     const digest = compileDigest({ vaultPath: TEMP_VAULT, dryRun: false });
 
@@ -302,6 +339,9 @@ describe("Wiki Prompt Section with Digest (M6 P0a-2 integration)", () => {
     // Should contain claim count
     const hasClaimCount = result.some(line => line.includes("claims across"));
     expect(hasClaimCount).toBe(true);
+
+    // Heading-only Topic claims must not spend prompt tokens
+    expect(result.some(line => /^\s*-\s*Topic:/.test(line))).toBe(false);
   });
 
   it("prompt section includes tool guidance when wiki tools are available", () => {

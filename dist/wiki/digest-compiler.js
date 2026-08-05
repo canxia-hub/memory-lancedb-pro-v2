@@ -225,7 +225,9 @@ function extractContradictions(body) {
     const trimmed = line.trim();
     if (/^##+\s/.test(trimmed)) {
       const heading = trimmed.replace(/^##+\s*/, '').toLowerCase();
-      inContradictionSection = /矛盾|contradiction|冲突|不一致/.test(heading);
+      // Narrow contradiction detection: issue/“不一致” sections are often symptoms + mitigation,
+      // not claim-vs-claim contradictions. Only explicit contradiction/conflict sections count.
+      inContradictionSection = /矛盾|contradiction|冲突/.test(heading) && !/缓解|mitigation|已知问题/.test(heading);
       continue;
     }
     if (inContradictionSection && (trimmed.startsWith('- ') || trimmed.startsWith('* '))) {
