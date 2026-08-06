@@ -14,7 +14,7 @@ import { memoryStats, memoryDebug, } from "./diagnostics.js";
 import { createLegacyMigrationManager, } from "../store/migrations.js";
 // Wiki tools (Phase W4)
 import { registerAllWikiTools, setWikiToolConfigGetter } from "./wiki-tools.js";
-// Working-memory tools (v4.1: file-layer internalization)
+// Working-memory（工作任务）tools (v4.1: file-layer internalization)
 import { registerWmTools } from "./wm-tools.js";
 import { initializeWorkingMemoryStore, closeWorkingMemoryStore } from "../store/working-memory-store.js";
 import { createLanceDBStore } from "../store/lancedb-store.js";
@@ -597,7 +597,7 @@ export function registerAllMemoryTools(registerTool, options = {}) {
     // Wiki tools (Phase W4)
     registerAllWikiTools(registerCompatibleTool);
     setWikiToolConfigGetter(() => _config);
-    // Working-memory tools (v4.1): per-agent 工厂绑定车道，config 未就绪或 enabled=false 时工厂返回 null
+    // Working-memory（工作任务）tools (v4.1): per-agent 工厂绑定车道，config 未就绪或 enabled=false 时工厂返回 null
     registerWmTools(registerTool, {
         getConfig: () => _config,
         adapt: adaptToolForHost,

@@ -1,7 +1,7 @@
 {
   "id": "memory-lancedb-pro",
   "name": "Memory LanceDB Pro",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "kind": "memory",
   "description": "Capability-first LanceDB memory plugin with hybrid retrieval, wiki tools, and host interop (v3)",
   "configSchema": {
@@ -128,7 +128,7 @@
       },
       "workingMemory": {
         "type": "object",
-        "description": "Working-memory task store (v4.1). Independent LanceDB table with per-agent lane isolation.",
+        "description": "Working-memory（工作任务）task store (v4.1). Independent LanceDB table with per-agent lane isolation.",
         "properties": {
           "enabled": {
             "type": "boolean",

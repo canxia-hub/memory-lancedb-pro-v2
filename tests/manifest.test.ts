@@ -16,7 +16,7 @@ describe("Plugin package.json", () => {
 
   it("has correct identity", () => {
     expect(pkg.name).toBe("memory-lancedb-pro");
-    expect(pkg.version).toBe("4.0.0");
+    expect(pkg.version).toBe("4.1.0");
     expect(pkg.type).toBe("module");
   });
 
@@ -49,7 +49,7 @@ describe("openclaw.plugin.json manifest", () => {
 
   it("has correct id and version", () => {
     expect(manifest.id).toBe("memory-lancedb-pro");
-    expect(manifest.version).toBe("4.0.0");
+    expect(manifest.version).toBe("4.1.0");
     expect(manifest.kind).toBe("memory");
   });
 

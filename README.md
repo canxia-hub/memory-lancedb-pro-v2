@@ -1,20 +1,20 @@
 # Memory LanceDB Pro v4
 
-Capability-first LanceDB memory plugin for OpenClaw — hybrid retrieval, Wiki knowledge graph with vector search, dreaming engine, and incremental build.
+Capability-first LanceDB memory plugin for OpenClaw — hybrid retrieval, Wiki knowledge graph with vector search, per-agent working-memory（工作任务）lanes, and incremental build.
 
-**Production-proven**: 767+ memories, 142 wiki pages vector-indexed, 4350 graph nodes / 5435 edges, 218/218 vitest passing.
+**Production-proven**: 767+ memories, 142 wiki pages vector-indexed, 4350 graph nodes / 5435 edges, 279/279 vitest passing, 48 working-memory task records migrated from the retired file layer.
 
 ## Quick Facts
 
 | Item | Detail |
 |------|--------|
-| Version | 4.0.0 |
+| Version | 4.1.0 |
 | OpenClaw | >=2026.5.6 |
-| Tools | 18 (10 memory + 8 wiki) |
-| Tests | 218 (9 test files) |
+| Tools | 24 (10 memory + 8 wiki + 6 working-memory) |
+| Tests | 279 (11 test files) |
 | DB | LanceDB 0.33 embedded |
 | Embedding | 2560-dim (DashScope tongyi-embedding-vision-flash) |
-| Tables | `memories` + `wiki_pages` (fully isolated) |
+| Tables | `memories` + `wiki_pages` + `working_memory` (fully isolated) |
 | Retrieval | Hybrid: FTS (BM25) + Vector (cosine) + Lexical |
 | Wiki | Graph + Vector Search + Incremental Build |
 
@@ -81,7 +81,7 @@ dist/
 
 ---
 
-## Tools (18)
+## Tools (24)
 
 ### Memory Tools (10)
 
@@ -111,6 +111,21 @@ dist/
 | `wiki_index` | Rebuild category indexes + main INDEX.md |
 | `wiki_sync_links` | Synchronize backlinks across all entries |
 
+### Working Memory（工作任务）Tools (6)
+
+Per-agent task execution state in an independent `working_memory` table (no vectors, no dreaming sweep exposure). Tool factories bind `ctx.agentId` → `agent:<id>` lane: writes are lane-isolated, cross-lane reads allowed via explicit `scope`, and `crossAgentWriteAllowlist` (default `["main"]`) grants main-agent 代管 writes.
+
+| Tool | Description |
+|------|-------------|
+| `memory_wm_get` | 查询本车道最新活动任务（或按 taskId / 跨车道只读 / yaml 输出） |
+| `memory_wm_create` | 在本车道创建工作任务（wm-YYYY-MM-DD-topic） |
+| `memory_wm_update` | 补丁式更新任务字段（status=completed/abandoned 自动写 completed_at） |
+| `memory_wm_append` | 追加式更新数组字段（decisions/learnings/risks/artifacts 等，高频推荐） |
+| `memory_wm_list` | 列出任务（默认本车道非归档；scope 跨车道只读；scopes=true 全车道概览） |
+| `memory_wm_archive` | 归档任务（状态迁移为 archived，ARCHIVE-RULES 必填校验，仍可查询） |
+
+The legacy `.working-memory/` file layer was fully retired on 2026-08-07: 48 task records across 8 agent lanes migrated into the table (file backup retained), and all agent core files were adapted to the `memory_wm_*` interface.
+
 ---
 
 ## Feature Matrix
@@ -130,6 +145,7 @@ dist/
 | **Host Interop** | Public artifacts provider + host events manager. |
 | **Plugin State** | openKeyedStore persistence (fire-and-forget, honest degradation). |
 | **Legacy Migration** | Automatic v0→v2 schema upgrade with skip-existing idempotency. |
+| **Working Memory（工作任务）** | Independent `working_memory` table (no vectors). 6 `memory_wm_*` tools with per-agent lane isolation via tool-factory binding (`ctx.agentId` → `agent:<id>`). Archive = status migration with ARCHIVE-RULES required-field validation. One-shot migration script with dry-run + skipExisting idempotency. |
 
 ### Disabled by Default
 
@@ -203,6 +219,7 @@ wiki_build({ force: true })     ← Full rebuild
 | `memories` | User memories | id, scope, content, embedding[2560], category, importance, createdAt, updatedAt, metadata |
 | `wiki_pages` | Wiki vector index | id, path, title, content, embedding[2560], category, tags, updatedAt, metadata |
 | `memory_assets` | Multimodal assets | id, memoryId, modality, mimeType, storagePath, ... |
+| `working_memory` | Working-memory（工作任务）task state | id, task_id, scope (agent:<id> lane), goal, status, priority, plan/decisions/learnings/... (JSON), created_at, updated_at, completed_at, archived_at |
 
 **Indexes**: BITMAP on `scope`/`category` (memories), BITMAP on `category` (wiki_pages), FTS on `content` (memories, icu tokenizer).
 
@@ -215,7 +232,7 @@ npm install
 # Type check
 npm run typecheck
 
-# Test (218 tests)
+# Test (279 tests)
 npm test
 
 # Integration tests
@@ -251,6 +268,12 @@ node scripts/test-wiki-incremental-build.mjs
           },
           "dreaming": {
             "enabled": false  // default: false
+          },
+          "workingMemory": {
+            "enabled": true,                      // default: true; false fully unloads memory_wm_* tools
+            "tableName": "working_memory",
+            "crossAgentWriteAllowlist": ["main"], // agents allowed to write other lanes (代管)
+            "yamlFormatDefault": false
           }
         }
       }

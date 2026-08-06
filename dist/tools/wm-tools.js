@@ -1,5 +1,5 @@
 /**
- * Working Memory Tools - memory_wm_* 六工具
+ * Working Memory（工作任务）Tools - memory_wm_* 六工具
  *
  * 通过工具工厂绑定调用者车道（ctx.agentId → agent:<id>），实现：
  * - 写入隔离：非授权 agent 只能写自己的车道
@@ -120,7 +120,7 @@ function textResult(result) {
 function createWmGetTool(binding) {
     return {
         name: 'memory_wm_get',
-        description: 'Get the current working-memory task for your lane (or a specific task / another lane read-only). Working memory tracks active complex-task execution state.',
+        description: '（工作任务）Get the current working-memory task for your lane (or a specific task / another lane read-only). Working memory tracks active complex-task execution state.',
         parameters: {
             type: 'object',
             properties: {
@@ -153,7 +153,7 @@ function createWmGetTool(binding) {
 function createWmCreateTool(binding) {
     return {
         name: 'memory_wm_create',
-        description: 'Create a working-memory task in your lane. One active complex task per lane is the convention.',
+        description: '（工作任务）Create a working-memory task in your lane. One active complex task per lane is the convention.',
         parameters: {
             type: 'object',
             properties: {
@@ -192,7 +192,7 @@ function createWmCreateTool(binding) {
 function createWmUpdateTool(binding) {
     return {
         name: 'memory_wm_update',
-        description: 'Patch fields of a working-memory task (goal/status/priority/currentStep/outcome/notes, or replace array fields). status=completed/abandoned auto-writes completed_at.',
+        description: '（工作任务）Patch fields of a working-memory task (goal/status/priority/currentStep/outcome/notes, or replace array fields). status=completed/abandoned auto-writes completed_at.',
         parameters: {
             type: 'object',
             properties: {
@@ -240,7 +240,7 @@ function createWmUpdateTool(binding) {
 function createWmAppendTool(binding) {
     return {
         name: 'memory_wm_append',
-        description: 'Append items to working-memory task array fields (decisions/learnings/risks/blockers/artifacts/nextActions/plan) without replacing existing content.',
+        description: '（工作任务）Append items to working-memory task array fields (decisions/learnings/risks/blockers/artifacts/nextActions/plan) without replacing existing content.',
         parameters: {
             type: 'object',
             properties: {
@@ -277,7 +277,7 @@ function createWmAppendTool(binding) {
 function createWmListTool(binding) {
     return {
         name: 'memory_wm_list',
-        description: 'List working-memory tasks. Default: non-archived tasks in your lane. Use scope to view other lanes (read-only), status=archived for history, scopes=true for a cross-lane overview.',
+        description: '（工作任务）List working-memory tasks. Default: non-archived tasks in your lane. Use scope to view other lanes (read-only), status=archived for history, scopes=true for a cross-lane overview.',
         parameters: {
             type: 'object',
             properties: {
@@ -310,7 +310,7 @@ function createWmListTool(binding) {
 function createWmArchiveTool(binding) {
     return {
         name: 'memory_wm_archive',
-        description: 'Archive a working-memory task (status=archived, keeps queryable snapshot). Validates ARCHIVE-RULES required fields (goal/outcome/decisions/learnings/artifacts) and reports missing ones.',
+        description: '（工作任务）Archive a working-memory task (status=archived, keeps queryable snapshot). Validates ARCHIVE-RULES required fields (goal/outcome/decisions/learnings/artifacts) and reports missing ones.',
         parameters: {
             type: 'object',
             properties: {

@@ -1,5 +1,5 @@
 /**
- * Working Memory Store - 任务执行态存储层
+ * Working Memory（工作任务）Store - 任务执行态存储层
  *
  * 内化 .working-memory/ 文件层（current-task.yaml + archive/）到 LanceDB 独立表。
  *
