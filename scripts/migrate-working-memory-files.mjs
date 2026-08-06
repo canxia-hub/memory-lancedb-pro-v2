@@ -139,23 +139,37 @@ function archivedAtFromFilename(fileName) {
     return m ? `${m[1]}-${m[2]}-${m[3]}T00:00:00+08:00` : '';
 }
 
+const SKIP_DIR_PATTERN = /[\\/](candidates|episode-like|packets)[\\/]/;
+
+/** 递归收集 .working-memory 下全部 yaml（2026-08-07 全量退役版） */
+function walkYaml(dir) {
+    const out = [];
+    if (!fs.existsSync(dir)) return out;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) out.push(...walkYaml(full));
+        else if (entry.name.endsWith('.yaml')) out.push(full);
+    }
+    return out;
+}
+
 function collectFiles() {
     const items = [];
     for (const ws of WORKSPACES) {
         const wmDir = path.join(ws.dir, '.working-memory');
-        const currentFile = path.join(wmDir, 'current-task.yaml');
-        if (fs.existsSync(currentFile)) {
-            const raw = fs.readFileSync(currentFile, 'utf8');
-            // 空白模板（goal 为空且 task_id 为空）跳过
-            if (!/task_id:\s*["']?\s*["']?\s*$/m.test(raw) && !/task_id:\s*["']{2}/m.test(raw)) {
-                items.push({ file: currentFile, lane: ws.lane, archived: false });
-            }
-        }
-        const archiveDir = path.join(wmDir, 'archive');
-        if (fs.existsSync(archiveDir)) {
-            for (const name of fs.readdirSync(archiveDir)) {
-                if (!name.endsWith('.yaml')) continue;
-                items.push({ file: path.join(archiveDir, name), lane: ws.lane, archived: true, archivedAt: archivedAtFromFilename(name) });
+        for (const file of walkYaml(wmDir)) {
+            const name = path.basename(file);
+            // 模板不迁移（模板概念已由 store schema 承载）
+            if (name.endsWith('.template.yaml')) continue;
+            // 桥接层（candidates/episode-like/packets）禁入 LanceDB（桥接铁律），仅走文件备份
+            if (SKIP_DIR_PATTERN.test(file)) continue;
+            if (name === 'current-task.yaml') {
+                const raw = fs.readFileSync(file, 'utf8');
+                // 空白模板（task_id 为空）跳过
+                if (/task_id:\s*["']?\s*["']?\s*$/m.test(raw) || /task_id:\s*["']{2}/m.test(raw)) continue;
+                items.push({ file, lane: ws.lane, archived: false });
+            } else {
+                items.push({ file, lane: ws.lane, archived: true, archivedAt: archivedAtFromFilename(name) });
             }
         }
     }
