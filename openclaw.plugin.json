@@ -126,6 +126,36 @@
           }
         }
       },
+      "workingMemory": {
+        "type": "object",
+        "description": "Working-memory task store (v4.1). Independent LanceDB table with per-agent lane isolation.",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable memory_wm_* tools and working_memory table (default: true; set false to fully unload)"
+          },
+          "tableName": {
+            "type": "string",
+            "default": "working_memory"
+          },
+          "crossAgentWriteAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "main"
+            ],
+            "description": "Agent ids allowed to write other lanes (main-agent 代管权); all other agents are lane-isolated for writes"
+          },
+          "yamlFormatDefault": {
+            "type": "boolean",
+            "default": false,
+            "description": "Default output format for memory_wm_get (false=json, true=yaml)"
+          }
+        }
+      },
       "embedding": {
         "type": "object",
         "properties": {
@@ -399,7 +429,13 @@
       "wiki_build",
       "wiki_doctor",
       "wiki_index",
-      "wiki_sync_links"
+      "wiki_sync_links",
+      "memory_wm_get",
+      "memory_wm_create",
+      "memory_wm_update",
+      "memory_wm_append",
+      "memory_wm_list",
+      "memory_wm_archive"
     ]
   },
   "commandAliases": [

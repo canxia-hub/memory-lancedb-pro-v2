@@ -58,10 +58,10 @@ describe("openclaw.plugin.json manifest", () => {
     expect(manifest.hooks.timeoutMs).toBe(60000);
   });
 
-  it("declares contracts.tools with 18 tools", () => {
+  it("declares contracts.tools with 24 tools", () => {
     expect(manifest.contracts).toBeDefined();
     expect(manifest.contracts.tools).toBeDefined();
-    expect(manifest.contracts.tools.length).toBe(18);
+    expect(manifest.contracts.tools.length).toBe(24);
   });
 
   it("includes all required memory tools", () => {
@@ -83,6 +83,24 @@ describe("openclaw.plugin.json manifest", () => {
     for (const t of required) {
       expect(manifest.contracts.tools).toContain(t);
     }
+  });
+
+  it("includes all working-memory tools (v4.1)", () => {
+    const required = [
+      "memory_wm_get", "memory_wm_create", "memory_wm_update",
+      "memory_wm_append", "memory_wm_list", "memory_wm_archive",
+    ];
+    for (const t of required) {
+      expect(manifest.contracts.tools).toContain(t);
+    }
+  });
+
+  it("declares workingMemory config block", () => {
+    const wm = manifest.configSchema.properties.workingMemory;
+    expect(wm).toBeDefined();
+    expect(wm.properties.enabled.default).toBe(true);
+    expect(wm.properties.tableName.default).toBe("working_memory");
+    expect(wm.properties.crossAgentWriteAllowlist.default).toEqual(["main"]);
   });
 
   it("has valid configSchema with dbPath required", () => {

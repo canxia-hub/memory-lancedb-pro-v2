@@ -14,6 +14,9 @@ import { memoryStats, memoryDebug, } from "./diagnostics.js";
 import { createLegacyMigrationManager, } from "../store/migrations.js";
 // Wiki tools (Phase W4)
 import { registerAllWikiTools, setWikiToolConfigGetter } from "./wiki-tools.js";
+// Working-memory tools (v4.1: file-layer internalization)
+import { registerWmTools } from "./wm-tools.js";
+import { initializeWorkingMemoryStore, closeWorkingMemoryStore } from "../store/working-memory-store.js";
 import { createLanceDBStore } from "../store/lancedb-store.js";
 import { createSearchManager } from "../retrieval/search-manager.js";
 import { initializeAssetStore, closeAssetStore } from "../store/asset-store.js";
@@ -52,6 +55,10 @@ export async function initializeToolContext(context) {
         await initializeRecallTool(context.config, _store);
         // Phase C: Initialize asset store
         await initializeAssetStore(context.backendConfig);
+        // v4.1: Initialize working-memory store (灰度：enabled=false 时跳过)
+        if (context.config?.workingMemory?.enabled !== false) {
+            await initializeWorkingMemoryStore(context.backendConfig, context.config);
+        }
     })().catch(async (error) => {
         try {
             await closeRecallTool();
@@ -94,6 +101,8 @@ export async function closeToolContext() {
     await closeStoreTool();
     // Phase C: Close asset store
     await closeAssetStore();
+    // v4.1: Close working-memory store
+    await closeWorkingMemoryStore();
     if (_searchManager) {
         await _searchManager.close();
         _searchManager = null;
@@ -588,5 +597,10 @@ export function registerAllMemoryTools(registerTool, options = {}) {
     // Wiki tools (Phase W4)
     registerAllWikiTools(registerCompatibleTool);
     setWikiToolConfigGetter(() => _config);
+    // Working-memory tools (v4.1): per-agent 工厂绑定车道，config 未就绪或 enabled=false 时工厂返回 null
+    registerWmTools(registerTool, {
+        getConfig: () => _config,
+        adapt: adaptToolForHost,
+    });
 }
 //# sourceMappingURL=register.js.map
