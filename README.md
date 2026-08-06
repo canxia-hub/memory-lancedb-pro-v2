@@ -282,6 +282,38 @@ node scripts/test-wiki-incremental-build.mjs
 }
 ```
 
+## Agent Integration（核心文件接入指南）
+
+安装插件后，工具本身不会自动改变 Agent 行为——Agent 启动时读取的是自己的核心文件（AGENTS.md / MEMORY.md / TOOLS.md 等）。要让 Agent 真正认知并使用 `memory_wm_*`（工作任务）工具，需要在其核心文件中加入引导信息。以下为最小接入片段（XML-first 风格，可按你的核心文件格式调整）：
+
+### 1. 启动恢复（AGENTS.md session_startup）
+
+```xml
+<rule id="memory-restore">启动后优先恢复 MEMORY.md、memory/INDEX.md 等账本文件；并调用 memory_wm_get 恢复本车道最新活动任务（为空则无挂起）。</rule>
+```
+
+### 2. 状态写回路由（MEMORY.md writeback_routing）
+
+```xml
+<route type="runtime-status">复杂任务推进状态 → memory_wm_create / memory_wm_update / memory_wm_append（工厂自动绑定本车道，无需传 scope）</route>
+<route type="execution-snapshot">任务收尾快照 → memory_wm_archive（状态迁移为 archived，仍可查询）</route>
+```
+
+### 3. 使用约定（建议写入 TOOLS.md quick_checklist 或 MEMORY.md）
+
+- **taskId 格式**：`wm-YYYY-MM-DD-topic`（小写 kebab-case），车道内唯一
+- **单活动任务约定**：每个车道同一时刻只维护一个活动复杂任务
+- **append 优先**：数组字段（decisions/learnings/risks/artifacts/...）追加用 `memory_wm_append`；`memory_wm_update` 对数组是整体替换
+- **同任务写操作必须串行**：对同一任务并行调用 append + update 会产生 read-modify-write 竞态（后写覆盖先写）
+- **归档必填字段**：goal / outcome / decisions / learnings / artifacts；缺失时 `memory_wm_archive` 报错并列出缺失项
+- **车道隔离**：写入自动限定本车道；跨车道只读用 `scope="agent:<id>"`；代管写由配置 `workingMemory.crossAgentWriteAllowlist`（默认 `["main"]`）控制
+
+### 4. 离线留言模式（可选）
+
+目标 Agent 实时会话不可达时，代管方可直接在其车道创建 `planned` 通知任务——对方下次启动执行 `memory_wm_get` 时必达。这是 memory_wm_* 内生的离线通信通道。
+
+> 参考实例：本仓库作者的 8 个 Agent 已于 2026-08-07 完成全套核心文件适配（87 处精确替换），旧 `.working-memory/` 文件层彻底退役，48 条任务记录迁入 `working_memory` 表。
+
 ## License
 
 Apache-2.0
