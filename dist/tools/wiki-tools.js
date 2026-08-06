@@ -13,6 +13,15 @@ import { syncBacklinks, } from '../wiki/wiki-sync-links.js';
 import { queryGraph, buildWikiGraph, } from '../wiki/wiki-graph.js';
 // M6 导入 (digest compiler)
 import { compileDigest, ensureDigest, } from '../wiki/digest-compiler.js';
+// P1 导入 (wiki vector index)
+import { indexWikiPages, getWikiIndexStatus, } from '../wiki/wiki-vector-index.js';
+// ============================================================================
+// Config bridge (set by register.js to avoid circular dependency)
+// ============================================================================
+let _getPluginConfig = null;
+export function setWikiToolConfigGetter(getter) {
+    _getPluginConfig = getter;
+}
 // ============================================================================
 // Wiki Status Tool
 // ============================================================================
@@ -211,6 +220,10 @@ const wikiBuildSchema = {
             type: "string",
             description: "LLM model for semantic inference (optional)",
         },
+        force: {
+            type: "boolean",
+            description: "Force full rebuild instead of incremental (default: false)",
+        },
     },
 };
 function createWikiBuildTool() {
@@ -220,8 +233,12 @@ function createWikiBuildTool() {
         parameters: wikiBuildSchema,
         execute: async (params) => {
             const input = params;
-            // Call TS buildWikiGraph
-            const buildResult = await buildWikiGraph();
+            // Call TS buildWikiGraph (incremental by default, force=true for full)
+            const buildResult = await buildWikiGraph({
+                force: input.force ?? false,
+                semantic: input.semantic,
+                model: input.model,
+            });
             // M6: Auto-compile digest after graph build
             let digestResult;
             try {
@@ -234,6 +251,23 @@ function createWikiBuildTool() {
             } catch (e) {
                 digestResult = { error: String(e) };
             }
+            // P1: Update vector index after graph build
+            let vectorIndexResult;
+            try {
+                const config = _getPluginConfig?.();
+                if (config) {
+                    const vaultPath = config.vault?.path;
+                    if (vaultPath) {
+                        vectorIndexResult = await indexWikiPages(config, vaultPath, { force: true });
+                    } else {
+                        vectorIndexResult = { skipped: true, reason: 'no vault path' };
+                    }
+                } else {
+                    vectorIndexResult = { skipped: true, reason: 'config not available' };
+                }
+            } catch (e) {
+                vectorIndexResult = { error: String(e) };
+            }
             const result = {
                 graphPath: buildResult.graphPath,
                 reportPath: buildResult.reportPath,
@@ -242,7 +276,11 @@ function createWikiBuildTool() {
                 totalEdges: buildResult.analysis.totalEdges,
                 semanticEdges: buildResult.analysis.semanticEdges,
                 llmEnabled: input.semantic ?? false,
+                incremental: buildResult.incremental ?? false,
+                skipped: buildResult.skipped ?? false,
+                changes: buildResult.changes ?? null,
                 digest: digestResult,
+                vectorIndex: vectorIndexResult,
                 source: 'typescript',
             };
             return {

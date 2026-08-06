@@ -13,7 +13,7 @@ import { memoryPromote, } from "./promote.js";
 import { memoryStats, memoryDebug, } from "./diagnostics.js";
 import { createLegacyMigrationManager, } from "../store/migrations.js";
 // Wiki tools (Phase W4)
-import { registerAllWikiTools } from "./wiki-tools.js";
+import { registerAllWikiTools, setWikiToolConfigGetter } from "./wiki-tools.js";
 import { createLanceDBStore } from "../store/lancedb-store.js";
 import { createSearchManager } from "../retrieval/search-manager.js";
 import { initializeAssetStore, closeAssetStore } from "../store/asset-store.js";
@@ -587,5 +587,6 @@ export function registerAllMemoryTools(registerTool, options = {}) {
     }
     // Wiki tools (Phase W4)
     registerAllWikiTools(registerCompatibleTool);
+    setWikiToolConfigGetter(() => _config);
 }
 //# sourceMappingURL=register.js.map

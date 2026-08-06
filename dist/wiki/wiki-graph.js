@@ -9,7 +9,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { WIKI_ROOT, } from './wiki-store.js';
-import { extractWiki, } from './wiki-extractor.js';
+import { extractWiki, extractFile, } from './wiki-extractor.js';
+import { detectChanges, buildAndSaveManifest, } from './build-manifest.js';
 // ============================================================================
 // Constants
 // ============================================================================
@@ -503,23 +504,131 @@ function generateGraphJson(graph, communities) {
     };
 }
 // ============================================================================
-// Build Wiki Graph (对照 Python main)
+// Incremental Build Helper (P2)
 // ============================================================================
+
 /**
- * 构建 Wiki 知识图谱
- *
- * Python 实现:
- *   GRAPH_OUT.mkdir(exist_ok=True)
- *   G, meta = build_wiki_graph(WIKI_ROOT, use_llm=args.semantic, model=args.model)
- *   communities = detect_communities(G)
- *   analysis = analyze_graph(G, communities, meta)
- *   report_path = GRAPH_OUT / "GRAPH_REPORT.md"
- *   report_path.write_text(generate_report(G, analysis, WIKI_ROOT), encoding="utf-8")
- *   export_graph_json(G, communities, GRAPH_OUT / "graph.json")
- *   export_graph_html(G, communities, GRAPH_OUT / "graph.html")
+ * Resolve relative path to absolute sourceFile path for matching graph nodes.
+ * Graph nodes store sourceFile as the absolute path used during extraction.
  */
-export async function buildWikiGraph(options) {
-    const root = options?.wikiRoot || WIKI_ROOT;
+function relToSourceFile(root, relPath) {
+    return path.join(root, relPath);
+}
+
+/**
+ * Incremental build: only re-extract changed files, merge with existing graph.
+ *
+ * @param {string} root - Wiki vault root
+ * @param {object} changes - From detectChanges()
+ * @param {object} options - { semantic, model }
+ * @returns {Promise<object>} Build result
+ */
+async function incrementalBuild(root, changes, options) {
+    console.log(`Incremental build: +${changes.added.length} added, ~${changes.modified.length} modified, -${changes.deleted.length} deleted, ${changes.unchanged.length} unchanged`);
+
+    // Load existing graph (from the same vault root)
+    const graphFilePath = path.join(root, GRAPH_OUT_DIR, GRAPH_JSON_FILE);
+    let oldGraph;
+    try {
+        oldGraph = await loadGraph(graphFilePath);
+    } catch {
+        // No existing graph — fall back to full build
+        console.log('No existing graph found, falling back to full build');
+        return fullBuild(root, options);
+    }
+
+    // Files to re-extract: added + modified
+    const filesToExtract = [...changes.added, ...changes.modified];
+
+    // Extract new content from changed files
+    const newNodes = [];
+    const newEdges = [];
+    for (const relPath of filesToExtract) {
+        const fullPath = relToSourceFile(root, relPath);
+        try {
+            const result = await extractFile(fullPath);
+            newNodes.push(...result.nodes);
+            newEdges.push(...result.edges);
+        } catch (error) {
+            console.error(`Error extracting ${relPath}: ${error.message}`);
+        }
+    }
+
+    // Build set of sourceFiles to remove (deleted + modified)
+    const removedSourceFiles = new Set();
+    for (const relPath of [...changes.deleted, ...changes.modified]) {
+        removedSourceFiles.add(relToSourceFile(root, relPath));
+    }
+
+    // Filter old graph: keep nodes/edges from unchanged files only
+    const keptNodes = oldGraph.nodes.filter(n => !n.sourceFile || !removedSourceFiles.has(n.sourceFile));
+    const keptEdges = oldGraph.edges.filter(e => !e.sourceFile || !removedSourceFiles.has(e.sourceFile));
+
+    // Merge
+    const allNodes = [...keptNodes, ...newNodes];
+    const allEdges = [...keptEdges, ...newEdges];
+
+    // Deduplicate nodes (new nodes take precedence over kept ones with same ID)
+    const nodeMap = new Map();
+    for (const node of keptNodes) nodeMap.set(node.id, node);
+    for (const node of newNodes) nodeMap.set(node.id, node); // new overrides old
+    const uniqueNodes = Array.from(nodeMap.values());
+
+    // Clean dangling edges (edges pointing to non-existent nodes)
+    const nodeIds = new Set(uniqueNodes.map(n => n.id));
+    const cleanEdges = allEdges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
+
+    const graph = { nodes: uniqueNodes, edges: cleanEdges };
+
+    // Detect communities
+    const communities = detectCommunities(graph);
+    const uniqueCommunities = new Set(communities.values());
+
+    // Analyze
+    const analysis = analyzeGraph(graph, {
+        semanticEdges: 0,
+        semanticError: 'incremental build (no semantic)',
+        llmEnabled: false,
+    });
+
+    // Export
+    const outDir = path.join(root, GRAPH_OUT_DIR);
+    if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+    const graphPath = path.join(outDir, GRAPH_JSON_FILE);
+    const reportPath = path.join(outDir, REPORT_FILE);
+    const htmlPath = path.join(outDir, HTML_FILE);
+
+    const graphJson = generateGraphJson(graph, communities);
+    fs.writeFileSync(graphPath, JSON.stringify(graphJson, null, 2), 'utf-8');
+    fs.writeFileSync(reportPath, generateGraphReport(graph, analysis, root), 'utf-8');
+    fs.writeFileSync(htmlPath, generateGraphHtml(graph, analysis), 'utf-8');
+
+    // Save manifest
+    buildAndSaveManifest(root, 'incremental');
+
+    console.log(`Incremental build complete: ${uniqueNodes.length} nodes, ${cleanEdges.length} edges`);
+
+    return {
+        graph,
+        analysis,
+        graphPath,
+        reportPath,
+        htmlPath,
+        incremental: true,
+        changes: {
+            added: changes.added.length,
+            modified: changes.modified.length,
+            deleted: changes.deleted.length,
+            unchanged: changes.unchanged.length,
+        },
+    };
+}
+
+/**
+ * Full build: extract all files, rebuild graph from scratch.
+ */
+async function fullBuild(root, options) {
     // 1. Extract wiki content
     console.log(`正在提取 Wiki 知识库: ${root}`);
     const extraction = await extractWiki(root, {
@@ -528,10 +637,24 @@ export async function buildWikiGraph(options) {
     });
     console.log(`提取结果: ${extraction.nodes.length} 节点, ${extraction.edges.length} 边, ` +
         `语义边 ${extraction.metadata.semanticEdges}`);
-    // 2. Build graph
+    // 2. Build graph (with dangling-edge cleanup for consistency with incremental)
+    const seenNodeIds = new Set();
+    const uniqueNodes = [];
+    for (const node of extraction.nodes) {
+        if (!seenNodeIds.has(node.id)) {
+            seenNodeIds.add(node.id);
+            uniqueNodes.push(node);
+        }
+    }
+    const nodeIdSet = new Set(uniqueNodes.map(n => n.id));
+    const cleanEdges = extraction.edges.filter(e => nodeIdSet.has(e.source) && nodeIdSet.has(e.target));
+    const danglingRemoved = extraction.edges.length - cleanEdges.length;
+    if (danglingRemoved > 0) {
+        console.log(`清理悬空边: ${danglingRemoved} 条`);
+    }
     const graph = {
-        nodes: extraction.nodes,
-        edges: extraction.edges,
+        nodes: uniqueNodes,
+        edges: cleanEdges,
     };
     // 3. Detect communities
     const communities = detectCommunities(graph);
@@ -565,12 +688,66 @@ export async function buildWikiGraph(options) {
     console.log(`   边: ${graph.edges.length}`);
     console.log(`   社区: ${uniqueCommunities.size}`);
     console.log(`   语义边: ${extraction.metadata.semanticEdges}`);
+
+    // Save manifest
+    buildAndSaveManifest(root, 'full');
+
     return {
         graph,
         analysis,
         graphPath,
         reportPath,
         htmlPath,
+        incremental: false,
     };
+}
+
+// ============================================================================
+// Build Wiki Graph (public API)
+// ============================================================================
+
+/**
+ * 构建 Wiki 知识图谱
+ *
+ * 默认增量模式：只重新提取变更的文件，合并到现有图谱。
+ * force=true 时全量重建。
+ *
+ * @param {object} options - { wikiRoot?, semantic?, model?, force? }
+ * @returns {Promise<object>} Build result
+ */
+export async function buildWikiGraph(options) {
+    const root = options?.wikiRoot || WIKI_ROOT;
+    const force = options?.force ?? false;
+
+    if (!force) {
+        const changes = detectChanges(root);
+        if (!changes.hasChanges) {
+            // No changes — load existing graph stats and return
+            console.log('No changes detected, skipping rebuild');
+            const existingGraphPath = path.join(root, GRAPH_OUT_DIR, GRAPH_JSON_FILE);
+            let graph;
+            try {
+                graph = await loadGraph(existingGraphPath);
+            } catch {
+                // No existing graph — force full build
+                return fullBuild(root, options);
+            }
+            const analysis = analyzeGraph(graph, {});
+            const outDir = path.join(root, GRAPH_OUT_DIR);
+            return {
+                graph,
+                analysis,
+                graphPath: path.join(outDir, GRAPH_JSON_FILE),
+                reportPath: path.join(outDir, REPORT_FILE),
+                htmlPath: path.join(outDir, HTML_FILE),
+                incremental: true,
+                changes: { added: 0, modified: 0, deleted: 0, unchanged: Object.keys(changes.current).length },
+                skipped: true,
+            };
+        }
+        return incrementalBuild(root, changes, options);
+    }
+
+    return fullBuild(root, options);
 }
 //# sourceMappingURL=wiki-graph.js.map

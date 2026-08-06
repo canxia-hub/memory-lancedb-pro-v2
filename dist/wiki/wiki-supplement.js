@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WIKI_ROOT } from './wiki-store.js';
 import { queryGraph } from './wiki-graph.js';
+import { searchWikiVector } from './wiki-vector-index.js';
 
 // ============================================================================
 // Constants
@@ -149,18 +150,54 @@ function buildGetResultFromPage(page, relativePath, fromLine, lineCount) {
 
 export function createWikiCorpusSupplement(params) {
   const vaultPath = params.config.vault?.path || WIKI_ROOT;
+  const pluginConfig = params.config; // Full plugin config (dbPath, embedding, etc.)
   return {
     search: async (input) => {
       const maxResults = Math.max(1, input.maxResults ?? 10);
-      const results = [];
 
-      // 1. Query graph if available
+      // Collect candidates from all paths, keyed by path for dedup
+      const candidateMap = new Map(); // path -> { corpus, path, title, kind, vectorScore, keywordScore, graphScore, snippet, updatedAt, ... }
+
+      // Helper: add or merge a candidate
+      function addCandidate(entry) {
+        const key = entry.path;
+        const existing = candidateMap.get(key);
+        if (existing) {
+          // Merge scores from different paths
+          if (entry.vectorScore != null) existing.vectorScore = entry.vectorScore;
+          if (entry.keywordScore != null) existing.keywordScore = entry.keywordScore;
+          if (entry.graphScore != null) existing.graphScore = entry.graphScore;
+          // Prefer richer snippet
+          if (entry.snippet && entry.snippet.length > (existing.snippet?.length ?? 0)) {
+            existing.snippet = entry.snippet;
+          }
+        } else {
+          candidateMap.set(key, { ...entry });
+        }
+      }
+
+      // ── Path 0: Vector search (P1) ──────────────────────────────
+      try {
+        const vectorResults = await searchWikiVector(pluginConfig, input.query, { maxResults: maxResults * 2 });
+        for (const vr of vectorResults) {
+          addCandidate({
+            corpus: 'wiki',
+            path: vr.path,
+            title: vr.title,
+            kind: vr.category,
+            vectorScore: vr.vectorScore,
+            snippet: vr.snippet,
+            updatedAt: vr.updatedAt,
+          });
+        }
+      } catch { /* Vector search unavailable — fall through */ }
+
+      // ── Path 1: Graph query ─────────────────────────────────────
       const graphPath = path.join(vaultPath, 'graphify-out', 'graph.json');
-      if (fs.existsSync(graphPath) && results.length < maxResults) {
+      if (fs.existsSync(graphPath)) {
         try {
           const graphResult = await queryGraph(input.query, graphPath);
-          for (const { node, score } of graphResult.matchedNodes.slice(0, maxResults - results.length)) {
-            if (results.some(r => r.title === node.label)) continue;
+          for (const { node, score } of graphResult.matchedNodes.slice(0, maxResults * 2)) {
             let snippet = node.label;
             let kind = node.nodeType || 'document';
             let updatedAt;
@@ -173,45 +210,64 @@ export function createWikiCorpusSupplement(params) {
                 updatedAt = page.frontMatter.updated;
               }
             }
-            results.push({
+            addCandidate({
               corpus: 'wiki',
               path: node.sourceFile ? path.relative(vaultPath, node.sourceFile).replace(/\\/g, '/') : node.id,
-              title: node.label, kind, score, snippet,
-              id: node.id, updatedAt,
+              title: node.label,
+              kind,
+              graphScore: Math.min(1, score / 15), // Normalize graph score to 0-1
+              snippet,
+              id: node.id,
+              updatedAt,
             });
           }
         } catch { /* Graph query failed */ }
       }
 
-      // 2. Fallback: scan vault files with keyword matching
-      if (results.length < maxResults) {
-        const allFiles = scanVaultFiles(vaultPath);
-        for (const relPath of allFiles) {
-          if (results.some(r => r.path === relPath)) continue;
-          const page = readPageFromVault(vaultPath, relPath);
-          if (!page) continue;
-          const queryLower = input.query.toLowerCase();
-          const titleLower = page.frontMatter.title.toLowerCase();
-          const contentLower = page.body.toLowerCase();
-          let score = 0;
-          if (titleLower.includes(queryLower)) score += 20;
-          if (contentLower.includes(queryLower)) score += 5;
-          if (score > 0) {
-            results.push({
-              corpus: 'wiki',
-              path: relPath,
-              title: page.frontMatter.title,
-              kind: page.frontMatter.category,
-              score,
-              snippet: buildSnippet(page.rawContent, input.query),
-              updatedAt: page.frontMatter.updated,
-            });
-          }
+      // ── Path 2: Vault keyword scan ──────────────────────────────
+      const allFiles = scanVaultFiles(vaultPath);
+      for (const relPath of allFiles) {
+        const page = readPageFromVault(vaultPath, relPath);
+        if (!page) continue;
+        const queryLower = input.query.toLowerCase();
+        const titleLower = page.frontMatter.title.toLowerCase();
+        const contentLower = page.body.toLowerCase();
+        let rawScore = 0;
+        if (titleLower.includes(queryLower)) rawScore += 20;
+        if (contentLower.includes(queryLower)) rawScore += 5;
+        if (rawScore > 0) {
+          addCandidate({
+            corpus: 'wiki',
+            path: relPath,
+            title: page.frontMatter.title,
+            kind: page.frontMatter.category,
+            keywordScore: Math.min(1, rawScore / 25), // Normalize keyword score to 0-1
+            snippet: buildSnippet(page.rawContent, input.query),
+            updatedAt: page.frontMatter.updated,
+          });
         }
       }
 
-      results.sort((a, b) => b.score - a.score);
-      return results.slice(0, maxResults);
+      // ── Fusion ranking ──────────────────────────────────────────
+      // Weights: vector=0.5, keyword=0.3, graph=0.2
+      // If a path has no vector score, redistribute: keyword=0.6, graph=0.4
+      const W_VEC = 0.5, W_KW = 0.3, W_GRAPH = 0.2;
+      const W_KW_NOVEC = 0.6, W_GRAPH_NOVEC = 0.4;
+
+      const ranked = Array.from(candidateMap.values())
+        .map(c => {
+          const hasVector = c.vectorScore != null && c.vectorScore > 0;
+          if (hasVector) {
+            c.score = (c.vectorScore ?? 0) * W_VEC + (c.keywordScore ?? 0) * W_KW + (c.graphScore ?? 0) * W_GRAPH;
+          } else {
+            c.score = (c.keywordScore ?? 0) * W_KW_NOVEC + (c.graphScore ?? 0) * W_GRAPH_NOVEC;
+          }
+          return c;
+        })
+        .filter(c => c.score > 0)
+        .sort((a, b) => b.score - a.score);
+
+      return ranked.slice(0, maxResults);
     },
 
     get: async (input) => {
