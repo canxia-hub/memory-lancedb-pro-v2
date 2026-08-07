@@ -136,7 +136,8 @@ export async function memoryPromote(input) {
         // Write to MEMORY.md managed block (only for durable layer)
         if (targetLayer === 'durable') {
             try {
-                const workspaceDir = 'C:\\Users\\Administrator\\.openclaw\\workspace';
+                const homeDir = process.env.HOME || process.env.USERPROFILE || process.cwd();
+                const workspaceDir = process.env.OPENCLAW_WORKSPACE || path.join(homeDir, '.openclaw', 'workspace');
                 const mdPath = path.join(workspaceDir, 'MEMORY.md');
                 const dateStr = new Date().toISOString().split('T')[0];
                 const MANAGED_START = '<!-- MEMORY_LANCEDB_PRO_MANAGED_START -->';

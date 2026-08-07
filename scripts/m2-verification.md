@@ -2,7 +2,7 @@
 
 **Date**: 2026-07-31
 **Task**: M2 — Capture Sanitization + Policy Layer + Auto-Capture/Recall Hooks
-**Plugin**: memory-lancedb-pro-v3 (v4-dev branch)
+**Plugin**: memory-lancedb-pro (v4-dev branch)
 
 ## 1. Files Created/Modified
 

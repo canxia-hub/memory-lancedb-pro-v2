@@ -1,6 +1,6 @@
 # M3 Reflection Engine Verification
 
-> Plugin: memory-lancedb-pro-v3, branch: v4-dev
+> Plugin: memory-lancedb-pro, branch: v4-dev
 > Date: 2026-07-31
 > Per spec §2.6 six verification criteria
 

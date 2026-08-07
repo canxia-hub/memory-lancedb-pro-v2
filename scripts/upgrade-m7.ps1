@@ -1,13 +1,14 @@
 # M7 生产升级编排脚本 —— 停机窗口自治执行（不依赖 Gateway/小千）
 # 由一次性计划任务触发；全过程写日志；任一致命步骤失败→回滚备份→重启 Gateway
 $ErrorActionPreference = 'Continue'
-$LOG = 'C:\Users\Administrator\.openclaw\memory\backups\m7-execution.log'
-$PROD = 'C:\Users\Administrator\.openclaw\memory\memory-lancedb-pro-v2'
-$PLUGIN = 'C:\Users\Administrator\.openclaw\extensions\memory-lancedb-pro-v3'
-$NODE = 'C:\Program Files\nodejs\node.exe'
-$OPENCLAW = 'C:\Users\Administrator\AppData\Roaming\npm\openclaw.cmd'
+$OpenClawHome = if ($env:OPENCLAW_HOME) { $env:OPENCLAW_HOME } else { Join-Path $HOME '.openclaw' }
+$LOG = if ($env:MEMORY_M7_LOG) { $env:MEMORY_M7_LOG } else { Join-Path $OpenClawHome 'memory\backups\m7-execution.log' }
+$PROD = if ($env:MEMORY_DB_PATH) { $env:MEMORY_DB_PATH } else { Join-Path $OpenClawHome 'memory\memory-lancedb-pro-v4' }
+$PLUGIN = if ($env:MEMORY_PLUGIN_PATH) { $env:MEMORY_PLUGIN_PATH } else { Join-Path $OpenClawHome 'extensions\memory-lancedb-pro-v4' }
+$NODE = if ($env:NODE_EXE) { $env:NODE_EXE } else { 'node.exe' }
+$OPENCLAW = if ($env:OPENCLAW_CMD) { $env:OPENCLAW_CMD } else { 'openclaw.cmd' }
 $TS = Get-Date -Format 'yyyyMMdd-HHmmss'
-$BACKUP = "C:\Users\Administrator\.openclaw\memory\backups\memory-lancedb-pro-v2-m7-$TS"
+$BACKUP = Join-Path $OpenClawHome "memory\backups\memory-lancedb-pro-v4-m7-$TS"
 
 function Log($msg) {
     $line = "[{0}] {1}" -f (Get-Date -Format 'HH:mm:ss'), $msg

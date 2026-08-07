@@ -13,7 +13,7 @@ Test Files  9 passed (9)
 
 ## 2. Digest 编译器对真实 vault 跑一轮
 
-- **agent-digest.json 已生成**: `C:\Users\Administrator\.openclaw\wiki\.openclaw-wiki\cache\agent-digest.json`
+- **agent-digest.json 已生成**: `<WIKI_ROOT>/.openclaw-wiki/cache/agent-digest.json`
 - **格式与官方一致**: claimCount, pages[{title, kind, claimCount, topClaims, questions, contradictions}], contradictionClusters, compiledAt
 - **Claims 非空**: 142 pages scanned, 709 total claims, 4 pages in digest
 - **MAX_PAGES=4, MAX_CLAIMS_PER_PAGE=2**: 遵守官方常量

@@ -9,7 +9,7 @@ let mod;
 let dbPath;
 
 const LANE_MAIN = "agent:main";
-const LANE_TUAN = "agent:tuan";
+const LANE_PEER = "agent:example";
 
 function makeTask(overrides = {}) {
   return {
@@ -88,9 +88,9 @@ describe("create", () => {
   });
 
   it("allows same task_id in a different lane", async () => {
-    const res = await store.create(makeTask({ scope: LANE_TUAN }));
+    const res = await store.create(makeTask({ scope: LANE_PEER }));
     expect(res.success).toBe(true);
-    expect(res.record.scope).toBe(LANE_TUAN);
+    expect(res.record.scope).toBe(LANE_PEER);
   });
 });
 
@@ -225,7 +225,7 @@ describe("list / laneOverview", () => {
   });
 
   it("cross-lane view: main can list tuan lane", async () => {
-    const res = await store.list({ scope: LANE_TUAN });
+    const res = await store.list({ scope: LANE_PEER });
     expect(res.tasks.map((t) => t.task_id)).toContain("wm-2026-08-06-test-task");
   });
 
@@ -233,7 +233,7 @@ describe("list / laneOverview", () => {
     const res = await store.laneOverview();
     expect(res.success).toBe(true);
     const main = res.lanes.find((l) => l.scope === LANE_MAIN);
-    const tuan = res.lanes.find((l) => l.scope === LANE_TUAN);
+    const tuan = res.lanes.find((l) => l.scope === LANE_PEER);
     expect(main.archived).toBe(1);
     expect(main.latestActive).toBeTruthy();
     expect(tuan.active).toBe(1);

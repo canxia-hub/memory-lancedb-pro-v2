@@ -1,6 +1,8 @@
 import lancedb from '@lancedb/lancedb';
 import { rmSync } from 'node:fs';
-const P = 'C:\\Users\\Administrator\\.openclaw\\memory\\tmp-fts-tokenizer-probe';
+import os from 'node:os';
+import path from 'node:path';
+const P = process.env.MEMORY_TEST_DB || path.join(os.tmpdir(), 'memory-lancedb-pro', 'tmp-fts-tokenizer-probe');
 rmSync(P, { recursive: true, force: true });
 const db = await lancedb.connect(P, { readConsistencyInterval: 1 });
 const t = await db.createTable('t', [

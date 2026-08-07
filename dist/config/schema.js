@@ -51,6 +51,8 @@ export const DEFAULT_CONFIG = {
  * Align with wiki-store WIKI_ROOT so tools, corpus supplement, and compiled digest
  * read the same vault by default. Can still be overridden by config.vault.path.
  */
+const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
 export const DEFAULT_WIKI_VAULT_PATH = process.env.WIKI_ROOT
-    || 'C:\\Users\\Administrator\\.openclaw\\wiki';
+    || process.env.OPENCLAW_WIKI_ROOT
+    || (HOME_DIR ? `${HOME_DIR}/.openclaw/wiki` : '.openclaw/wiki');
 //# sourceMappingURL=schema.js.map

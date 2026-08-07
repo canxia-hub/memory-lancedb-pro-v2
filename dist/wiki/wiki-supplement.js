@@ -1,7 +1,7 @@
 /**
  * Wiki Supplement - Batch B + M6 implementation
  *
- * Provides wiki corpus supplement and prompt supplement for memory-lancedb-pro-v3.
+ * Provides wiki corpus supplement and prompt supplement for memory-lancedb-pro.
  * Vault-path-independent: works with any vault path, not just WIKI_ROOT.
  *
  * Reference: upstream memory-wiki corpus-supplement.ts + prompt-section.ts

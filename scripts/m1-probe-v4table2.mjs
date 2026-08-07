@@ -1,5 +1,8 @@
 import lancedb from '@lancedb/lancedb';
-const db = await lancedb.connect('C:\\Users\\Administrator\\.openclaw\\memory\\tmp-m1-test-db', { readConsistencyInterval: 1 });
+import os from 'node:os';
+import path from 'node:path';
+const DB_PATH = process.env.MEMORY_TEST_DB || path.join(os.tmpdir(), 'memory-lancedb-pro', 'tmp-m1-test-db');
+const db = await lancedb.connect(DB_PATH, { readConsistencyInterval: 1 });
 const t = await db.openTable('memories__v4');
 const schema = await t.schema();
 const f = schema.fields.find(x => x.name === 'embedding');

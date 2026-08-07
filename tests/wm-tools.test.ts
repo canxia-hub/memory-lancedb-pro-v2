@@ -48,7 +48,7 @@ afterAll(async () => {
 });
 
 const ctxMain = { agentId: "main" };
-const ctxTuan = { agentId: "tuan" };
+const ctxPeer = { agentId: "example" };
 
 async function call(name, ctx, params = {}) {
   const tool = host.resolve(name, ctx);
@@ -81,14 +81,14 @@ describe("factory registration & lane binding", () => {
 
   it("resolveLane binds agent:<id>, falls back to defaultScope", () => {
     expect(wmToolsMod.resolveLane(ctxMain, PLUGIN_CONFIG)).toBe("agent:main");
-    expect(wmToolsMod.resolveLane({ agentId: "tuan" }, PLUGIN_CONFIG)).toBe("agent:tuan");
+    expect(wmToolsMod.resolveLane({ agentId: "example" }, PLUGIN_CONFIG)).toBe("agent:example");
     expect(wmToolsMod.resolveLane({}, PLUGIN_CONFIG)).toBe("default");
     expect(wmToolsMod.resolveLane(undefined, PLUGIN_CONFIG)).toBe("default");
   });
 
   it("isAdminLane honors crossAgentWriteAllowlist", () => {
     expect(wmToolsMod.isAdminLane(ctxMain, PLUGIN_CONFIG)).toBe(true);
-    expect(wmToolsMod.isAdminLane(ctxTuan, PLUGIN_CONFIG)).toBe(false);
+    expect(wmToolsMod.isAdminLane(ctxPeer, PLUGIN_CONFIG)).toBe(false);
     expect(wmToolsMod.isAdminLane({}, PLUGIN_CONFIG)).toBe(false);
   });
 });
@@ -117,7 +117,7 @@ describe("create + get (own lane)", () => {
   });
 
   it("empty lane returns empty-state hint", async () => {
-    const res = await call("memory_wm_get", { agentId: "qinglan" });
+    const res = await call("memory_wm_get", { agentId: "empty-agent" });
     expect(res.details.empty).toBe(true);
     expect(res.details.message).toMatch(/no active task/);
   });
@@ -125,7 +125,7 @@ describe("create + get (own lane)", () => {
 
 describe("lane isolation (writes)", () => {
   it("non-admin cannot create in another lane", async () => {
-    const res = await call("memory_wm_create", ctxTuan, {
+    const res = await call("memory_wm_create", ctxPeer, {
       taskId: "wm-2026-08-06-intrusion",
       goal: "越权写入",
       scope: "agent:main",
@@ -135,38 +135,38 @@ describe("lane isolation (writes)", () => {
   });
 
   it("non-admin cannot update/append/archive another lane", async () => {
-    const u = await call("memory_wm_update", ctxTuan, { scope: "agent:main", taskId: "wm-2026-08-06-main-task", goal: "篡改" });
+    const u = await call("memory_wm_update", ctxPeer, { scope: "agent:main", taskId: "wm-2026-08-06-main-task", goal: "篡改" });
     expect(u.details.success).toBe(false);
-    const a = await call("memory_wm_append", ctxTuan, { scope: "agent:main", taskId: "wm-2026-08-06-main-task", decisions: ["x"] });
+    const a = await call("memory_wm_append", ctxPeer, { scope: "agent:main", taskId: "wm-2026-08-06-main-task", decisions: ["x"] });
     expect(a.details.success).toBe(false);
-    const ar = await call("memory_wm_archive", ctxTuan, { scope: "agent:main", taskId: "wm-2026-08-06-main-task", outcome: "success" });
+    const ar = await call("memory_wm_archive", ctxPeer, { scope: "agent:main", taskId: "wm-2026-08-06-main-task", outcome: "success" });
     expect(ar.details.success).toBe(false);
   });
 
   it("admin (main) can write another lane with explicit scope", async () => {
     const res = await call("memory_wm_create", ctxMain, {
-      taskId: "wm-2026-08-06-tuan-delegated",
-      goal: "主 Agent 代 tuan 创建",
-      scope: "agent:tuan",
+      taskId: "wm-2026-08-06-peer-delegated",
+      goal: "主 Agent 代 peer 创建",
+      scope: "agent:example",
     });
     expect(res.details.success).toBe(true);
-    expect(res.details.record.scope).toBe("agent:tuan");
+    expect(res.details.record.scope).toBe("agent:example");
   });
 
-  it("tuan sees the delegated task in own lane", async () => {
-    const res = await call("memory_wm_get", ctxTuan);
-    expect(res.details.record.task_id).toBe("wm-2026-08-06-tuan-delegated");
+  it("peer sees the delegated task in own lane", async () => {
+    const res = await call("memory_wm_get", ctxPeer);
+    expect(res.details.record.task_id).toBe("wm-2026-08-06-peer-delegated");
   });
 });
 
 describe("cross-lane read", () => {
-  it("tuan can read main lane via explicit scope", async () => {
-    const res = await call("memory_wm_get", ctxTuan, { scope: "agent:main", taskId: "wm-2026-08-06-main-task" });
+  it("peer can read main lane via explicit scope", async () => {
+    const res = await call("memory_wm_get", ctxPeer, { scope: "agent:main", taskId: "wm-2026-08-06-main-task" });
     expect(res.details.record.goal).toBe("主车道任务");
   });
 
   it("list with scope shows other lane tasks", async () => {
-    const res = await call("memory_wm_list", ctxTuan, { scope: "agent:main" });
+    const res = await call("memory_wm_list", ctxPeer, { scope: "agent:main" });
     expect(res.details.tasks.map((t) => t.task_id)).toContain("wm-2026-08-06-main-task");
   });
 
@@ -175,7 +175,7 @@ describe("cross-lane read", () => {
     expect(res.details.yourLane).toBe("agent:main");
     const lanes = res.details.lanes.map((l) => l.scope);
     expect(lanes).toContain("agent:main");
-    expect(lanes).toContain("agent:tuan");
+    expect(lanes).toContain("agent:example");
   });
 });
 
@@ -203,8 +203,8 @@ describe("update / append / archive flow", () => {
   });
 
   it("archive reports missing fields when incomplete", async () => {
-    await call("memory_wm_create", ctxTuan, { taskId: "wm-2026-08-06-thin-task", goal: "缺字段" });
-    const res = await call("memory_wm_archive", ctxTuan, { taskId: "wm-2026-08-06-thin-task", outcome: "success" });
+    await call("memory_wm_create", ctxPeer, { taskId: "wm-2026-08-06-thin-task", goal: "缺字段" });
+    const res = await call("memory_wm_archive", ctxPeer, { taskId: "wm-2026-08-06-thin-task", outcome: "success" });
     expect(res.details.success).toBe(false);
     expect(res.details.missing).toContain("decisions");
   });

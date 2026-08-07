@@ -3,12 +3,13 @@
 # 流程：停 Gateway → 备份+修复 6 行 char-mangled metadata → 验证 → 启 Gateway
 # 失败策略：修复失败 → 自动回滚备份 → 无论如何重启 Gateway → 全程日志
 $ErrorActionPreference = 'Continue'
-$LOG = 'C:\Users\Administrator\.openclaw\logs\m8-execution.log'
-$PROD = 'C:\Users\Administrator\.openclaw\memory\memory-lancedb-pro-v2'
-$PLUGIN = 'C:\Users\Administrator\.openclaw\extensions\memory-lancedb-pro-v3'
-$NODE = 'C:\Program Files\nodejs\node.exe'
-$OPENCLAW = 'C:\Users\Administrator\AppData\Roaming\npm\openclaw.cmd'
-$REPAIR = "$PLUGIN\scripts\repair-mangled-metadata.mjs"
+$OpenClawHome = if ($env:OPENCLAW_HOME) { $env:OPENCLAW_HOME } else { Join-Path $HOME '.openclaw' }
+$LOG = if ($env:MEMORY_M8_LOG) { $env:MEMORY_M8_LOG } else { Join-Path $OpenClawHome 'logs\m8-execution.log' }
+$PROD = if ($env:MEMORY_DB_PATH) { $env:MEMORY_DB_PATH } else { Join-Path $OpenClawHome 'memory\memory-lancedb-pro-v4' }
+$PLUGIN = if ($env:MEMORY_PLUGIN_PATH) { $env:MEMORY_PLUGIN_PATH } else { Join-Path $OpenClawHome 'extensions\memory-lancedb-pro-v4' }
+$NODE = if ($env:NODE_EXE) { $env:NODE_EXE } else { 'node.exe' }
+$OPENCLAW = if ($env:OPENCLAW_CMD) { $env:OPENCLAW_CMD } else { 'openclaw.cmd' }
+$REPAIR = Join-Path $PLUGIN 'scripts\repair-mangled-metadata.mjs'
 
 function Log($msg) {
     $line = "[{0}] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $msg
@@ -19,7 +20,8 @@ function Start-Gateway {
     & schtasks /run /tn "OpenClaw Gateway" | Out-Null
 }
 function Find-LastBackup {
-    $f = Get-ChildItem 'C:\Users\Administrator\.openclaw\memory\backups\m8-mangled-metadata-backup-*.json' -ErrorAction SilentlyContinue |
+    $backupGlob = Join-Path $OpenClawHome 'memory\backups\m8-mangled-metadata-backup-*.json'
+    $f = Get-ChildItem $backupGlob -ErrorAction SilentlyContinue |
          Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if ($f) { return $f.FullName } else { return $null }
 }

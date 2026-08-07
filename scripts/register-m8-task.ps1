@@ -6,7 +6,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $TaskName = 'OpenClaw-M8-Repair-Once'
-$Script = 'C:\Users\Administrator\.openclaw\extensions\memory-lancedb-pro-v3\scripts\upgrade-m8.ps1'
+$Script = if ($env:MEMORY_M8_SCRIPT) { $env:MEMORY_M8_SCRIPT } else { Join-Path $PSScriptRoot 'upgrade-m8.ps1' }
 $at = [datetime]::Parse($RunAt)
 
 if ($at -lt (Get-Date).AddMinutes(5)) { throw "RunAt 必须在未来（至少 5 分钟后）：$at" }

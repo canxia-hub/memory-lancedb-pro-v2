@@ -1,8 +1,8 @@
 /**
  * Wiki Supplement - Batch B implementation
  *
- * Provides wiki corpus supplement and prompt supplement for memory-lancedb-pro-v2.
- * Integrates with existing v2 wiki capabilities (wiki-store, wiki-graph).
+ * Provides wiki corpus supplement and prompt supplement for memory-lancedb-pro.
+ * Integrates with existing wiki capabilities (wiki-store, wiki-graph).
  *
  * Reference: upstream memory-wiki corpus-supplement.ts + prompt-section.ts
  */

@@ -14,8 +14,10 @@ import { WIKI_CATEGORIES, } from './types.js';
 /**
  * Wiki root directory - 可通过环境变量 WIKI_ROOT 覆盖
  */
+const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
 export const WIKI_ROOT = process.env.WIKI_ROOT
-    || 'C:\\Users\\Administrator\\.openclaw\\wiki';
+    || process.env.OPENCLAW_WIKI_ROOT
+    || (HOME_DIR ? `${HOME_DIR}/.openclaw/wiki` : '.openclaw/wiki');
 /**
  * Category to template mapping (对照 Python CATEGORY_TO_TEMPLATE)
  */

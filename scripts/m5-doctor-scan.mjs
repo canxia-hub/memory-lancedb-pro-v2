@@ -7,13 +7,14 @@
  * 4. Re-scan → verify 0 contaminated
  */
 import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const lancedb = require('@lancedb/lancedb');
 
-const DB_PATH = 'C:\\Users\\Administrator\\.openclaw\\memory\\tmp-m5-test-db';
+const DB_PATH = process.env.MEMORY_TEST_DB || path.join(os.tmpdir(), 'memory-lancedb-pro', 'tmp-m5-test-db');
 
 // Import doctor functions
 const { runDoctorCheck, applyDoctorFixes, scanLegacyEnvelopeRowIds } = await import('../dist/doctor/contract.js');

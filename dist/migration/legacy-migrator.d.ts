@@ -6,7 +6,7 @@
  */
 /**
  * Legacy memory entry schema (from memory-lancedb-pro).
- * Verified from real database: C:\Users\Administrator\.openclaw\memory\lancedb-pro
+ * Verified against the legacy production database during migration.
  */
 export interface LegacyMemoryEntry {
     id: string;

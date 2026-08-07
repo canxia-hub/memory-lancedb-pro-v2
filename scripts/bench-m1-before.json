@@ -1,7 +1,7 @@
 {
   "phase": "before",
   "timestamp": "2026-07-30T22:29:03.067Z",
-  "dbPath": "C:\\Users\\Administrator\\.openclaw\\memory\\tmp-m1-test-db",
+  "dbPath": "<OPENCLAW_MEMORY>/tmp-m1-test-db",
   "totalRows": 763,
   "embeddingDimension": 2560,
   "vectorSearch": {

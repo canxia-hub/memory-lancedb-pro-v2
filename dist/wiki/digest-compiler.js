@@ -21,7 +21,10 @@ import * as path from 'path';
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const DEFAULT_WIKI_ROOT = process.env.WIKI_ROOT || 'C:\\Users\\Administrator\\.openclaw\\wiki';
+const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '';
+const DEFAULT_WIKI_ROOT = process.env.WIKI_ROOT
+  || process.env.OPENCLAW_WIKI_ROOT
+  || (HOME_DIR ? `${HOME_DIR}/.openclaw/wiki` : '.openclaw/wiki');
 const AGENT_DIGEST_REL = '.openclaw-wiki/cache/agent-digest.json';
 const DIGEST_MAX_PAGES = 4;
 const DIGEST_MAX_CLAIMS_PER_PAGE = 2;

@@ -20,9 +20,12 @@ import {
   resetWikiVectorState,
 } from '../dist/wiki/wiki-vector-index.js';
 import { readFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 // Load real plugin config
-const rawCfg = JSON.parse(readFileSync('C:/Users/Administrator/.openclaw/openclaw.json', 'utf8'));
+const configPath = process.env.OPENCLAW_CONFIG_PATH || path.join(os.homedir(), '.openclaw', 'openclaw.json');
+const rawCfg = JSON.parse(readFileSync(configPath, 'utf8'));
 const pluginRawCfg = rawCfg?.plugins?.entries?.['memory-lancedb-pro']?.config;
 if (!pluginRawCfg) {
   console.error('FAIL: Plugin config not found');
@@ -30,7 +33,7 @@ if (!pluginRawCfg) {
 }
 
 const config = resolveConfig(pluginRawCfg);
-const vaultPath = config.vault?.path || 'C:\\Users\\Administrator\\.openclaw\\wiki';
+const vaultPath = config.vault?.path || process.env.WIKI_ROOT || path.join(os.homedir(), '.openclaw', 'wiki');
 
 console.log('=== P1 Wiki Vector Index Integration Test ===\n');
 console.log('Config:');

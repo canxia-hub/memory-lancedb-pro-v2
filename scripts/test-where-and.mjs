@@ -1,8 +1,11 @@
 import { createRequire } from 'node:module';
+import os from 'node:os';
+import path from 'node:path';
 const lancedb = createRequire(import.meta.url)('@lancedb/lancedb');
+const DB_PATH = process.env.MEMORY_TEST_DB || path.join(os.tmpdir(), 'memory-lancedb-pro', 'tmp-m1-test-db');
 
 async function test() {
-  const db = await lancedb.connect('C:\\Users\\Administrator\\.openclaw\\memory\\tmp-m1-test-db');
+  const db = await lancedb.connect(DB_PATH);
   const t = await db.openTable('memories');
   
   // Get a known record

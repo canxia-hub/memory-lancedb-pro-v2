@@ -3,9 +3,12 @@
 import { createLanceDBStore } from '../dist/store/lancedb-store.js';
 import { copyFileSync, cpSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
 
-const SMOKE_DB = 'C:\\Users\\Administrator\\.openclaw\\memory\\tmp-m1-smoke-db';
-const COPY_DB = 'C:\\Users\\Administrator\\.openclaw\\memory\\tmp-m1-test-db';
+const TMP_ROOT = process.env.MEMORY_TEST_TMP || path.join(os.tmpdir(), 'memory-lancedb-pro');
+const SMOKE_DB = process.env.MEMORY_SMOKE_DB || path.join(TMP_ROOT, 'tmp-m1-smoke-db');
+const COPY_DB = process.env.MEMORY_TEST_DB || path.join(TMP_ROOT, 'tmp-m1-test-db');
 const results = [];
 function record(name, pass, detail) {
   results.push({ name, pass, detail });

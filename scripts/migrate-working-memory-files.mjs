@@ -8,32 +8,38 @@
  *   node scripts/migrate-working-memory-files.mjs --run --db <path>
  *
  * 设计：
- * - 扫描 8 个 workspace 的 .working-memory/{current-task.yaml, archive/*.yaml}
- * - workspace → 车道映射：workspace→agent:main，workspace-<id>→agent:<id>
- * - YAML 宽松解析（host node_modules 的 yaml 包）；未知字段并入 notes，不丢数据
+ * - 扫描 WM_MIGRATION_SOURCES 指定的 workspace；默认只扫描 OPENCLAW_WORKSPACE/agent:main
+ * - YAML 宽松解析；未知字段并入 notes，不丢数据
  * - archive 文件 → status=archived，文件名日期 → archived_at
  * - skipExisting：重复 task_id+scope 跳过，可安全重跑
+ * - 依赖：yaml 包；可用 OPENCLAW_YAML_PATH 指向宿主 yaml 模块
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { createRequire } from 'node:module';
 import { createWorkingMemoryStore } from '../dist/store/working-memory-store.js';
 
 const require = createRequire(import.meta.url);
-const HOST_YAML = 'C:/Users/Administrator/AppData/Roaming/npm/node_modules/openclaw/node_modules/yaml';
-const YAML = require(HOST_YAML);
+let YAML;
+try {
+    YAML = require(process.env.OPENCLAW_YAML_PATH || 'yaml');
+} catch (err) {
+    console.error('缺少 yaml 依赖：请安装 yaml，或用 OPENCLAW_YAML_PATH 指向宿主 yaml 模块。');
+    throw err;
+}
 
-const DEFAULT_DB = 'C:/Users/Administrator/.openclaw/memory/memory-lancedb-pro-v2';
-const WORKSPACES = [
-    { dir: 'C:/Users/Administrator/.openclaw/workspace', lane: 'agent:main' },
-    { dir: 'C:/Users/Administrator/.openclaw/workspace-su-er', lane: 'agent:su-er' },
-    { dir: 'C:/Users/Administrator/.openclaw/workspace-tuan', lane: 'agent:tuan' },
-    { dir: 'C:/Users/Administrator/.openclaw/workspace-intel-analyst', lane: 'agent:intel-analyst' },
-    { dir: 'C:/Users/Administrator/.openclaw/workspace-liu-hanyan', lane: 'agent:liu-hanyan' },
-    { dir: 'C:/Users/Administrator/.openclaw/workspace-qinglan', lane: 'agent:qinglan' },
-    { dir: 'C:/Users/Administrator/.openclaw/workspace-qian-tong', lane: 'agent:qian-tong' },
-    { dir: 'C:/Users/Administrator/.openclaw/workspace-shu-shu', lane: 'agent:shu-shu' },
+const HOME_DIR = os.homedir();
+const DEFAULT_DB = process.env.MEMORY_DB_PATH || path.join(HOME_DIR, '.openclaw', 'memory', 'memory-lancedb-pro-v4');
+const DEFAULT_WORKSPACES = [
+    {
+        dir: process.env.OPENCLAW_WORKSPACE || path.join(HOME_DIR, '.openclaw', 'workspace'),
+        lane: process.env.OPENCLAW_WORKSPACE_LANE || 'agent:main',
+    },
 ];
+const WORKSPACES = process.env.WM_MIGRATION_SOURCES
+    ? JSON.parse(process.env.WM_MIGRATION_SOURCES)
+    : DEFAULT_WORKSPACES;
 
 const KNOWN_FIELDS = new Set([
     'task_id', 'goal', 'status', 'priority', 'owner', 'source', 'outcome',
@@ -167,9 +173,9 @@ function collectFiles() {
                 const raw = fs.readFileSync(file, 'utf8');
                 // 空白模板（task_id 为空）跳过
                 if (/task_id:\s*["']?\s*["']?\s*$/m.test(raw) || /task_id:\s*["']{2}/m.test(raw)) continue;
-                items.push({ file, lane: ws.lane, archived: false });
+                items.push({ file, lane: ws.lane, root: ws.dir, archived: false });
             } else {
-                items.push({ file, lane: ws.lane, archived: true, archivedAt: archivedAtFromFilename(name) });
+                items.push({ file, lane: ws.lane, root: ws.dir, archived: true, archivedAt: archivedAtFromFilename(name) });
             }
         }
     }
@@ -191,7 +197,7 @@ async function main() {
     const report = [];
     const records = [];
     for (const item of items) {
-        const rel = item.file.replace(/C:\/Users\/Administrator\/.openclaw\//, '');
+        const rel = item.root ? path.relative(item.root, item.file) : item.file;
         const { record, error } = parseFile(item.file, item.lane, { archived: item.archived, archivedAt: item.archivedAt });
         if (error) {
             report.push({ file: rel, lane: item.lane, error });

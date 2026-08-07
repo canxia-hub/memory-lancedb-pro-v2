@@ -11,7 +11,7 @@
  * Wiki vault configuration (Batch B)
  */
 export interface WikiVaultConfig {
-    /** Wiki vault path (defaults to ~/.openclaw/wiki/memory-vaults/memory-lancedb-pro-v2) */
+    /** Wiki vault path (defaults to the host wiki root or OPENCLAW_WIKI_ROOT) */
     path?: string;
 }
 /**
@@ -83,5 +83,5 @@ export declare const DEFAULT_CONFIG: Partial<MemoryPluginConfig>;
  * Default wiki vault path for v2 (Batch B)
  * Compatible with existing openclaw.json memory-wiki path pattern
  */
-export declare const DEFAULT_WIKI_VAULT_PATH = "C:\\Users\\Administrator\\.openclaw\\wiki\\memory-vaults\\memory-lancedb-pro-v2";
+export declare const DEFAULT_WIKI_VAULT_PATH: string;
 //# sourceMappingURL=schema.d.ts.map

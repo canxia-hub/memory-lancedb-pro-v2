@@ -1,23 +1,26 @@
-// Repair char-mangled metadata rows in production DB (2026-08-03 REM sweep bug).
+// Repair char-mangled metadata rows in a LanceDB memories table.
 // Run ONLY while Gateway is stopped (LanceDB single-writer safety).
 // Modes:
 //   --dry-run            scan + spell-check only, no writes
 //   (default)            backup originals -> repair via fixed store.update -> verify
 //   --rollback <file>    restore original metadata strings from a backup JSON
 // Exit codes: 0 = success / VERIFY_CLEAN, 2 = repair or verify failed, 3 = rollback failed
-import { pathToFileURL } from 'node:url';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { createRequire } from 'node:module';
 
-const BASE = 'C:/Users/Administrator/.openclaw/extensions/memory-lancedb-pro-v3/dist';
-const DB_PATH = 'C:/Users/Administrator/.openclaw/memory/memory-lancedb-pro-v2';
-const BACKUP_DIR = 'C:/Users/Administrator/.openclaw/memory/backups';
+const require = createRequire(import.meta.url);
+const lancedb = require('@lancedb/lancedb');
+const { createLanceDBStore } = await import('../dist/store/lancedb-store.js');
+
+const HOME_DIR = os.homedir();
+const DB_PATH = process.env.MEMORY_DB_PATH || path.join(HOME_DIR, '.openclaw', 'memory', 'memory-lancedb-pro-v4');
+const BACKUP_DIR = process.env.MEMORY_BACKUP_DIR || path.join(HOME_DIR, '.openclaw', 'memory', 'backups');
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const rollbackIdx = args.indexOf('--rollback');
 const ROLLBACK_FILE = rollbackIdx >= 0 ? args[rollbackIdx + 1] : null;
-
-const { createLanceDBStore } = await import(pathToFileURL(`${BASE}/store/lancedb-store.js`).href);
-const lancedb = await import(pathToFileURL('C:/Users/Administrator/.openclaw/extensions/memory-lancedb-pro-v3/node_modules/@lancedb/lancedb/dist/index.js').href);
 
 function isMangled(metadataStr) {
   if (typeof metadataStr !== 'string') return null;

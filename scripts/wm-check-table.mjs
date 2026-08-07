@@ -1,8 +1,11 @@
 // 只读验证：working_memory 表现状（fresh handle）
+import os from 'node:os';
+import path from 'node:path';
 import { createWorkingMemoryStore } from '../dist/store/working-memory-store.js';
 
+const dbPath = process.env.MEMORY_DB_PATH || path.join(os.homedir(), '.openclaw', 'memory', 'memory-lancedb-pro-v4');
 const store = createWorkingMemoryStore({
-    dbPath: 'C:/Users/Administrator/.openclaw/memory/memory-lancedb-pro-v2',
+    dbPath,
     tableName: 'working_memory',
 });
 await store.initialize();

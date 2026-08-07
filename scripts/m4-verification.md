@@ -2,7 +2,7 @@
 
 **Date**: 2026-07-31
 **Executor**: subagent (m4-dreaming-engine)
-**Target**: `C:\Users\Administrator\.openclaw\extensions\memory-lancedb-pro-v3`
+**Target**: `<repo-root>`
 
 ---
 
@@ -68,8 +68,8 @@ Test Files  7 passed (7)
 
 ## 6. Test DB
 
-- Source: `C:\Users\Administrator\.openclaw\memory\tmp-m1-test-db` (copied to `tmp-m4-test-db`)
-- Production DB (`memory-lancedb-pro-v2`) untouched ✅
+- Source: `<OPENCLAW_MEMORY>/tmp-m1-test-db` (copied to `<OPENCLAW_MEMORY>/tmp-m4-test-db`)
+- Production DB (`<OPENCLAW_MEMORY>/memory-lancedb-pro-v4`) untouched ✅
 
 ---
 

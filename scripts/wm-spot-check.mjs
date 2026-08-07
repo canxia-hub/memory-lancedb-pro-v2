@@ -1,14 +1,14 @@
-// M4 对账：抽查 3 条复杂任务字段完整性（fresh handle，只读）
+// M4 对账：抽查任务字段完整性（fresh handle，只读）
+// 默认只给示例；实际抽查用 WM_SPOT_CHECKS='[["agent:main","wm-..."]]' 指定。
+import os from 'node:os';
+import path from 'node:path';
 import { createWorkingMemoryStore } from '../dist/store/working-memory-store.js';
 
-const CHECKS = [
-    ['agent:main', 'wm-2026-07-30-memory-plugin-v4-upgrade'],
-    ['agent:tuan', 'dreamina-cli-official-guide-skill-plugin-20260625'],
-    ['agent:intel-analyst', 'skill-improvement-knowledge-resource-collector'],
-];
+const CHECKS = JSON.parse(process.env.WM_SPOT_CHECKS || '[["agent:main","wm-example-task"]]');
+const dbPath = process.env.MEMORY_DB_PATH || path.join(os.homedir(), '.openclaw', 'memory', 'memory-lancedb-pro-v4');
 
 const store = createWorkingMemoryStore({
-    dbPath: 'C:/Users/Administrator/.openclaw/memory/memory-lancedb-pro-v2',
+    dbPath,
     tableName: 'working_memory',
 });
 await store.initialize();

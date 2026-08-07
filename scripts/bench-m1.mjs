@@ -7,6 +7,7 @@
  */
 import { createRequire } from 'node:module';
 import { writeFileSync } from 'node:fs';
+import os from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,7 +15,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const lancedb = require('@lancedb/lancedb');
 
-const DB_PATH = 'C:\\Users\\Administrator\\.openclaw\\memory\\tmp-m1-test-db';
+const DB_PATH = process.env.MEMORY_BENCH_DB || join(os.tmpdir(), 'memory-lancedb-pro', 'tmp-m1-test-db');
 const TABLE_NAME = 'memories';
 const PHASE = process.argv[2] || 'before';
 const OUTPUT = join(__dirname, `bench-m1-${PHASE}.json`);

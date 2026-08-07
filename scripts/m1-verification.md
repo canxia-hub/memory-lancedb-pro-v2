@@ -5,7 +5,7 @@
 
 ## 1. 范围与红线复核
 
-- ✅ 生产库 `memory\memory-lancedb-pro-v2` 未触碰（LastWriteTime 2026-07-30 02:05，早于 M1 开工；备份于 `memory\backups\memory-lancedb-pro-v2-20260731-0615`，25MB）
+- ✅ 生产库 `<OPENCLAW_MEMORY>/memory-lancedb-pro-v4` 未触碰（备份于 `<OPENCLAW_MEMORY>/backups/`，25MB）
 - ✅ openclaw.json 未改、Gateway 未重启
 - ✅ 所有验证在副本 `memory\tmp-m1-test-db` 与全新库 `tmp-m1-smoke-db` 上进行
 

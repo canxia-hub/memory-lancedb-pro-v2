@@ -5,3 +5,5 @@ dist/**/*.map
 .env.*
 test-data/
 *.log
+*.bak
+*.bak-*
