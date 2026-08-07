@@ -1,7 +1,7 @@
 {
   "id": "memory-lancedb-pro",
   "name": "Memory LanceDB Pro",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "kind": "memory",
   "description": "Capability-first LanceDB memory plugin with hybrid retrieval, wiki tools, and host interop (v3)",
   "configSchema": {
@@ -430,6 +430,9 @@
       "wiki_doctor",
       "wiki_index",
       "wiki_sync_links",
+      "wiki_traverse",
+      "wiki_path",
+      "wiki_search",
       "memory_wm_get",
       "memory_wm_create",
       "memory_wm_update",

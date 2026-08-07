@@ -81,7 +81,7 @@ dist/
 
 ---
 
-## Tools (24)
+## Tools (27)
 
 ### Memory Tools (10)
 
@@ -98,16 +98,19 @@ dist/
 | `memory_migrate_legacy` | Migrate from legacy database |
 | `memory_forget` | Permanently delete a memory |
 
-### Wiki Tools (8)
+### Wiki Tools (11)
 
 | Tool | Description |
 |------|-------------|
-| `wiki_status` | Vault mode, health, Obsidian CLI availability |
+| `wiki_status` | Vault mode, health, vector index coverage, Obsidian CLI availability |
 | `wiki_new` | Create new wiki entry with front matter |
 | `wiki_get` | Read wiki entry by path or lookup term |
-| `wiki_query` | Query knowledge graph by keyword |
-| `wiki_build` | Build graph (incremental by default, `force:true` for full) |
-| `wiki_doctor` | Lint vault: broken links, stale graph, health |
+| `wiki_query` | Hybrid search: `keyword` (graph scoring) / `vector` (semantic) / `hybrid` (default, fused ranking) + optional `expandGraph` 1-hop references neighborhood |
+| `wiki_traverse` | N-hop BFS graph expansion from a start node (depth/direction/edge-type filters, maxNodes cap, mtime-cached graph) |
+| `wiki_path` | Shortest path between two wiki entries (BFS, reports unreachable honestly) |
+| `wiki_search` | Semantic vector search over wiki_pages table (embedding similarity) |
+| `wiki_build` | Build graph (incremental by default, `force:true` for full) + auto vector index update |
+| `wiki_doctor` | Lint vault: broken links, stale graph, health + graph quality (isolated docs / tag coverage / hub centrality on references dimension) |
 | `wiki_index` | Rebuild category indexes + main INDEX.md |
 | `wiki_sync_links` | Synchronize backlinks across all entries |
 
@@ -239,6 +242,16 @@ npm test
 node scripts/test-wiki-vector-index.mjs
 node scripts/test-wiki-incremental-build.mjs
 ```
+
+### Adding a New Tool — Checklist（防遗漏）
+
+1. Implement the module under `dist/wiki/` (or `dist/tools/`), following the existing hand-maintained dist convention (**do not** run `npm run build`).
+2. Register the tool factory in `dist/tools/wiki-tools.js` (or the relevant tools file) inside `registerAll*`.
+3. **Declare the tool name in `openclaw.plugin.json` → `contracts.tools`** — the host filters tools by this allowlist; a registered-but-undeclared tool is silently invisible to agents.
+4. `node --check` every touched file, then run a functional test script against real data before restarting the gateway.
+5. Restart the gateway and verify via a real tool call (not just registration logs).
+
+> 教训来源（2026-08-08）：wiki_traverse/wiki_path/wiki_search 代码注册成功但未声明 contracts.tools，首轮重启后工具对 Agent 不可见，二次重启补登才上线。
 
 ## Configuration
 

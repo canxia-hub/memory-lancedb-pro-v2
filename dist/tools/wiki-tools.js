@@ -6,7 +6,7 @@
 // W1/W2 导入 (已落地)
 import { CATEGORY_SINGULAR_TO_PLURAL, } from '../wiki/types.js';
 import { listCategories, getEntry, createEntry, } from '../wiki/wiki-store.js';
-import { checkWikiHealth, } from '../wiki/wiki-doctor.js';
+import { checkWikiHealth, analyzeGraphQuality, } from '../wiki/wiki-doctor.js';
 import { buildAllIndexes, updateMainIndex, } from '../wiki/wiki-index.js';
 import { syncBacklinks, } from '../wiki/wiki-sync-links.js';
 // W3 导入 (契约已冻结，按签名导入)
@@ -14,7 +14,11 @@ import { queryGraph, buildWikiGraph, } from '../wiki/wiki-graph.js';
 // M6 导入 (digest compiler)
 import { compileDigest, ensureDigest, } from '../wiki/digest-compiler.js';
 // P1 导入 (wiki vector index)
-import { indexWikiPages, getWikiIndexStatus, } from '../wiki/wiki-vector-index.js';
+import { indexWikiPages, getWikiIndexStatus, searchWikiVector, } from '../wiki/wiki-vector-index.js';
+// M1 导入 (graph traversal)
+import { traverseGraph, findGraphPath, } from '../wiki/wiki-traverse.js';
+// M3 导入 (hybrid search)
+import { hybridWikiSearch, } from '../wiki/wiki-hybrid.js';
 // ============================================================================
 // Config bridge (set by register.js to avoid circular dependency)
 // ============================================================================
@@ -37,6 +41,15 @@ function createWikiStatusTool() {
         execute: async () => {
             const categories = listCategories();
             const healthResult = await checkWikiHealth();
+            // M2: vector index coverage
+            let vectorIndex;
+            try {
+                const config = _getPluginConfig?.();
+                vectorIndex = config ? await getWikiIndexStatus(config) : { available: false, reason: 'config not available' };
+            }
+            catch (e) {
+                vectorIndex = { available: false, error: String(e) };
+            }
             const result = {
                 categories,
                 health: {
@@ -45,6 +58,7 @@ function createWikiStatusTool() {
                     graphStale: healthResult.graphStale,
                     healthy: healthResult.healthy,
                 },
+                vectorIndex,
                 source: 'typescript',
             };
             return {
@@ -159,12 +173,29 @@ const wikiQuerySchema = {
     properties: {
         query: {
             type: "string",
-            description: "Search query for graph query",
+            description: "Search query text",
         },
         maxResults: {
             type: "number",
             minimum: 1,
             description: "Maximum number of results (default: 10)",
+        },
+        mode: {
+            type: "string",
+            enum: ["keyword", "vector", "hybrid"],
+            description: "Search mode: keyword (graph keyword scoring), vector (semantic), hybrid (keyword+vector fused, default)",
+        },
+        keywordWeight: {
+            type: "number",
+            description: "Hybrid fusion keyword weight (default: 0.5)",
+        },
+        vectorWeight: {
+            type: "number",
+            description: "Hybrid fusion vector weight (default: 0.5)",
+        },
+        expandGraph: {
+            type: "boolean",
+            description: "Include 1-hop references neighborhood for top results (default: false)",
         },
     },
     required: ["query"],
@@ -172,14 +203,45 @@ const wikiQuerySchema = {
 function createWikiQueryTool() {
     return {
         name: "wiki_query",
-        description: "Query the built Wiki knowledge graph by keyword. Returns matched nodes and related edges from graph.json.",
+        description: "Query the Wiki knowledge base. mode=keyword: graph keyword scoring; mode=vector: semantic search; mode=hybrid (default): keyword+vector fused ranking with optional graph expansion.",
         parameters: wikiQuerySchema,
         execute: async (params) => {
             const input = params;
-            // Call TS queryGraph
-            const queryResult = await queryGraph(input.query);
-            // Limit results
             const maxResults = input.maxResults || 10;
+            const mode = input.mode || 'hybrid';
+            // --- vector mode: pure semantic ---
+            if (mode === 'vector') {
+                const config = _getPluginConfig?.();
+                if (!config) {
+                    const err = { error: 'plugin config not available', results: [] };
+                    return {
+                        content: [{ type: "text", text: JSON.stringify(err, null, 2) }],
+                        details: err,
+                    };
+                }
+                const results = await searchWikiVector(config, input.query, { maxResults });
+                const result = { query: input.query, mode, totalResults: results.length, results, source: 'typescript' };
+                return {
+                    content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+                    details: result,
+                };
+            }
+            // --- hybrid mode: keyword + vector fused ---
+            if (mode === 'hybrid') {
+                const config = _getPluginConfig?.();
+                const result = await hybridWikiSearch(config ?? null, input.query, {
+                    maxResults,
+                    keywordWeight: input.keywordWeight,
+                    vectorWeight: input.vectorWeight,
+                    expandGraph: input.expandGraph,
+                });
+                return {
+                    content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+                    details: result,
+                };
+            }
+            // --- keyword mode: legacy behavior (unchanged) ---
+            const queryResult = await queryGraph(input.query);
             const limitedNodes = queryResult.matchedNodes.slice(0, maxResults);
             const result = {
                 matchedNodes: limitedNodes.map(m => ({
@@ -197,6 +259,7 @@ function createWikiQueryTool() {
                 })),
                 graphWasStale: queryResult.graphWasStale,
                 totalMatches: queryResult.matchedNodes.length,
+                mode: 'keyword',
                 source: 'typescript',
             };
             return {
@@ -304,6 +367,14 @@ function createWikiDoctorTool() {
         parameters: wikiDoctorSchema,
         execute: async () => {
             const healthResult = await checkWikiHealth();
+            // M4: graph quality analysis (references-dimension connectivity)
+            let graphQuality;
+            try {
+                graphQuality = await analyzeGraphQuality();
+            }
+            catch (e) {
+                graphQuality = { available: false, error: String(e) };
+            }
             const result = {
                 healthy: healthResult.healthy,
                 coreFilesOk: healthResult.coreFilesOk,
@@ -312,6 +383,7 @@ function createWikiDoctorTool() {
                 brokenLinks: healthResult.brokenLinks,
                 graphStale: healthResult.graphStale,
                 graphStaleReason: healthResult.graphStaleReason,
+                graphQuality,
                 source: 'typescript',
             };
             return {
@@ -389,6 +461,162 @@ function createWikiSyncLinksTool() {
     };
 }
 // ============================================================================
+// Wiki Traverse Tool (M1)
+// ============================================================================
+const wikiTraverseSchema = {
+    type: "object",
+    properties: {
+        start: {
+            type: "string",
+            description: "Start node: exact id or label (fuzzy matched)",
+        },
+        depth: {
+            type: "number",
+            description: "Expansion depth 1-3 (default: 2)",
+        },
+        direction: {
+            type: "string",
+            enum: ["outgoing", "incoming", "both"],
+            description: "Edge direction filter (default: both)",
+        },
+        edgeTypes: {
+            type: "array",
+            items: { type: "string" },
+            description: "Edge relation filter: contains/tagged_with/references (default: all)",
+        },
+        maxNodes: {
+            type: "number",
+            description: "Max nodes to return (default: 50, hard cap 200)",
+        },
+    },
+    required: ["start"],
+};
+function createWikiTraverseTool() {
+    return {
+        name: "wiki_traverse",
+        description: "Traverse the Wiki knowledge graph from a start node via N-hop BFS expansion. Supports depth/direction/edge-type filters. Use for exploring relationships around an entry.",
+        parameters: wikiTraverseSchema,
+        execute: async (params) => {
+            const input = params;
+            const result = await traverseGraph({
+                start: input.start,
+                depth: input.depth,
+                direction: input.direction,
+                edgeTypes: input.edgeTypes,
+                maxNodes: input.maxNodes,
+            });
+            return {
+                content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+                details: result,
+            };
+        },
+    };
+}
+// ============================================================================
+// Wiki Path Tool (M1)
+// ============================================================================
+const wikiPathSchema = {
+    type: "object",
+    properties: {
+        from: {
+            type: "string",
+            description: "Start node: exact id or label (fuzzy matched)",
+        },
+        to: {
+            type: "string",
+            description: "Target node: exact id or label (fuzzy matched)",
+        },
+        maxDepth: {
+            type: "number",
+            description: "Max search depth (default: 5, hard cap 8)",
+        },
+        edgeTypes: {
+            type: "array",
+            items: { type: "string" },
+            description: "Edge relation filter: contains/tagged_with/references (default: all)",
+        },
+    },
+    required: ["from", "to"],
+};
+function createWikiPathTool() {
+    return {
+        name: "wiki_path",
+        description: "Find the shortest path between two Wiki entries in the knowledge graph (BFS). Returns the node chain and edges, or unreachable within maxDepth.",
+        parameters: wikiPathSchema,
+        execute: async (params) => {
+            const input = params;
+            const result = await findGraphPath({
+                from: input.from,
+                to: input.to,
+                maxDepth: input.maxDepth,
+                edgeTypes: input.edgeTypes,
+            });
+            return {
+                content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+                details: result,
+            };
+        },
+    };
+}
+// ============================================================================
+// Wiki Search Tool (M2 - vector channel)
+// ============================================================================
+const wikiSearchSchema = {
+    type: "object",
+    properties: {
+        query: {
+            type: "string",
+            description: "Semantic search query text",
+        },
+        maxResults: {
+            type: "number",
+            description: "Max results (default: 10)",
+        },
+        minScore: {
+            type: "number",
+            description: "Minimum similarity score 0-1 (default: 0.1)",
+        },
+        category: {
+            type: "string",
+            description: "Category filter (concepts/decisions/procedures/references/snippets)",
+        },
+    },
+    required: ["query"],
+};
+function createWikiSearchTool() {
+    return {
+        name: "wiki_search",
+        description: "Semantic vector search over Wiki pages (LanceDB wiki_pages table). Complements wiki_query (keyword) with embedding similarity.",
+        parameters: wikiSearchSchema,
+        execute: async (params) => {
+            const input = params;
+            const config = _getPluginConfig?.();
+            if (!config) {
+                const err = { error: 'plugin config not available', results: [] };
+                return {
+                    content: [{ type: "text", text: JSON.stringify(err, null, 2) }],
+                    details: err,
+                };
+            }
+            const results = await searchWikiVector(config, input.query, {
+                maxResults: input.maxResults,
+                minScore: input.minScore,
+                category: input.category,
+            });
+            const result = {
+                query: input.query,
+                totalResults: results.length,
+                results,
+                source: 'typescript',
+            };
+            return {
+                content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+                details: result,
+            };
+        },
+    };
+}
+// ============================================================================
 // Registration Function
 // ============================================================================
 /**
@@ -405,5 +633,9 @@ export function registerAllWikiTools(registerTool) {
     registerTool(createWikiDoctorTool());
     registerTool(createWikiIndexTool());
     registerTool(createWikiSyncLinksTool());
+    // M1/M2
+    registerTool(createWikiTraverseTool());
+    registerTool(createWikiPathTool());
+    registerTool(createWikiSearchTool());
 }
 //# sourceMappingURL=wiki-tools.js.map
