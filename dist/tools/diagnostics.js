@@ -67,8 +67,11 @@ export async function memoryStats(input = {}) {
     const layers = [];
     try {
         const store = getStoreInstance();
-        // Get all records for breakdown (limited scope for performance)
-        const records = await store.list({ limit: 500, scope: input.scope });
+        // Get all records for breakdown. NOTE: store.list() already fetches and sorts
+        // ALL matching rows before slicing, so a small limit gives zero performance
+        // benefit and silently truncates the breakdown (the "stats capped at 500" bug).
+        // Pass MAX_SAFE_INTEGER so scopes/categories/layers counts match totalMemories.
+        const records = await store.list({ limit: Number.MAX_SAFE_INTEGER, scope: input.scope });
         // Build scope breakdown
         const scopeCounts = new Map();
         const categoryCounts = new Map();
