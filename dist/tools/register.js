@@ -448,7 +448,7 @@ function createMemoryForgetTool() {
 function createMemoryPromoteTool() {
     return {
         name: "memory_promote",
-        description: "Mark a memory with promotion metadata. In the v2 first release this is a governance placeholder, not a full durable-layer promotion.",
+        description: "Apply a memory state/layer transition and append a content-free promotion audit; never writes memory content to MEMORY.md.",
         parameters: memoryPromoteSchema,
         execute: async (params) => {
             await ensureToolContextReady();

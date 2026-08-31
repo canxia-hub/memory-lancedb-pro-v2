@@ -267,9 +267,10 @@ export function registerAutoMemoryHooks(api, deps) {
 
   const enabledParts = [];
   if (reflectionConfig.enabled) enabledParts.push('reflection=on');
+  const hookCfg = resolveHookConfig(pluginConfig);
   api.logger.info?.(
     `[memory-lancedb-pro] auto-memory hooks registered ` +
-    `(autoRecall=false${enabledParts.length ? ', ' + enabledParts.join(', ') : ''} by default)`
+    `(autoRecall=${hookCfg.autoRecall}${enabledParts.length ? ', ' + enabledParts.join(', ') : ''})`
   );
 }
 

@@ -17,15 +17,21 @@
 /** @type {import('openclaw/plugin-sdk/plugin-entry').PluginStateKeyedStore|null} */
 let _stateStore = null;
 let _initialized = false;
+let _fallbackMode = false;
 
 /**
  * Initialize the plugin state store.
  * Must be called during plugin register(api).
  *
+ * Primary: OpenClaw openKeyedStore (bundled/trusted plugins only).
+ * Fallback: file-backed keyed store under opts.fallbackDir when the
+ * host API is restricted (2026.7.x release).
+ *
  * @param {object} api - OpenClawPluginApi (runtime.state.openKeyedStore)
+ * @param {{fallbackDir?: string}} [opts]
  * @returns {Promise<boolean>} true if initialized
  */
-export async function initPluginState(api) {
+export async function initPluginState(api, opts = {}) {
   if (_initialized && _stateStore) return true;
 
   try {
@@ -37,7 +43,19 @@ export async function initPluginState(api) {
     _initialized = true;
     return true;
   } catch (error) {
-    console.warn('[memory-lancedb-pro] openKeyedStore init failed (honest degradation):', error.message);
+    console.warn('[memory-lancedb-pro] openKeyedStore init failed:', error.message);
+    if (opts.fallbackDir) {
+      try {
+        const { createFileKeyedStore } = await import('./file-keyed-store.js');
+        _stateStore = createFileKeyedStore(opts.fallbackDir, 'memory-lancedb-pro', { maxEntries: 1000 });
+        _initialized = true;
+        _fallbackMode = true;
+        console.log('[memory-lancedb-pro] state store active via file fallback:', opts.fallbackDir);
+        return true;
+      } catch (fallbackError) {
+        console.warn('[memory-lancedb-pro] file fallback also failed (honest degradation):', fallbackError.message);
+      }
+    }
     _stateStore = null;
     return false;
   }
@@ -140,4 +158,12 @@ export async function getSearchCache(cacheKey) {
  */
 export function isStateActive() {
   return _initialized && _stateStore !== null;
+}
+
+/**
+ * Check whether the active store is the file fallback.
+ * @returns {boolean}
+ */
+export function isStateFallbackMode() {
+  return _fallbackMode;
 }

@@ -1,44 +1,20 @@
 /**
- * Memory Promote Tool - Honest Minimal Layer
+ * Memory Promote Tool
  *
- * Phase 2 minimal implementation with HONEST DEGRADATION.
- *
- * IMPORTANT: This is a MINIMAL IMPLEMENTATION with honest limitations.
- *
- * HONEST STATUS DECLARATION:
- * ==========================
- * Current skeleton implementation has LIMITED promote capability.
- *
- * What IS supported:
- * - Basic state tracking (pending -> confirmed placeholder)
- * - Query-based memory lookup
- * - Honest status reporting about limitations
- *
- * What IS NOT supported (requires durable layer completion):
- * - Full durable layer integration (governance state machine)
- * - Memory.md integration (writing to MEMORY.md)
- * - Promotion auditing trail
- * - Layer transitions (working -> durable -> reflection)
- * - Auto-recall governance integration
- *
- * This tool will be enhanced when durable layer is implemented.
- * Until then, promote() will:
- * 1. Find the memory
- * 2. Mark it as "promotion-pending" in metadata
- * 3. Return honest status about what was done and what wasn't
+ * Applies state/layer metadata transitions and writes content-free audit
+ * events outside always-loaded core files. It never copies memory content
+ * into MEMORY.md.
  */
 /**
  * Memory promotion state.
  *
- * NOTE: These states are MINIMAL placeholders.
- * Full governance state machine requires durable layer implementation.
+ * States persisted in memory metadata by memory_promote.
  */
 export type MemoryState = 'pending' | 'confirmed' | 'archived';
 /**
  * Memory promotion layer.
  *
- * NOTE: These layers are MINIMAL placeholders.
- * Full layer system requires durable layer implementation.
+ * Layers persisted in memory metadata by memory_promote.
  */
 export type MemoryLayer = 'working' | 'durable' | 'reflection' | 'archive';
 /**
@@ -68,39 +44,30 @@ export interface MemoryPromoteResult {
     found: boolean;
     /** State before promotion */
     previousState?: MemoryState;
-    /** State after promotion (placeholder) */
+    /** State after promotion */
     newState?: MemoryState;
     /** Layer before promotion */
     previousLayer?: MemoryLayer;
-    /** Layer after promotion (placeholder) */
+    /** Layer after promotion */
     newLayer?: MemoryLayer;
     /** Memory path */
     path?: string;
+    /** Relative path to the content-free promotion audit ledger */
+    auditPath?: string;
+    /** Whether metadata changed and a new audit event was written */
+    stateChanged?: boolean;
     /** Error if failed */
     error?: string;
-    /** HONEST LIMITATIONS NOTICE */
+    /** Remaining limitations, if any */
     limitations: string[];
     /** What was actually done */
     whatWasDone: string[];
 }
 /**
- * Memory promote - honest minimal implementation.
- *
- * Promotes a memory to confirmed/durable governance state.
- *
- * HONEST STATUS:
- * - Basic state tracking: SUPPORTED (metadata placeholder)
- * - Durable layer integration: NOT SUPPORTED (requires durable layer)
- * - MEMORY.md integration: NOT SUPPORTED (requires durable layer)
- * - Governance auditing: NOT SUPPORTED (requires durable layer)
- *
- * Behavior:
- * - If memoryId found: marks metadata with promotion-pending, returns honest limitations
- * - If durable layer not ready: clearly states what was NOT done
- * - Always returns limitations list so user knows what's incomplete
+ * Apply a requested governance transition and record a content-free audit.
  *
  * @param input - Promote input
- * @returns Promote result with honest limitations
+ * @returns Promote result
  */
 export declare function memoryPromote(input: MemoryPromoteInput): Promise<MemoryPromoteResult>;
 /**
@@ -115,6 +82,12 @@ export declare function getPromoteStatus(): Promise<{
     metadataPromotionSupported: boolean;
     /** Whether full durable layer is supported */
     durableLayerSupported: boolean;
+    /** Whether content-free promotion audit is supported */
+    governanceAuditSupported: boolean;
+    /** Core MEMORY.md is never written by promotion */
+    writesCoreMemoryFile: boolean;
+    /** Relative audit ledger pattern */
+    auditLedgerRelativePath: string;
     /** Reason if durable layer not supported */
     durableLayerUnavailableReason: string;
     /** Store status */

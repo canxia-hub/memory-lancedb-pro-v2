@@ -192,7 +192,7 @@ function register(api) {
     })}`);
 
     // Phase 3: Initialize persistent state (fire-and-forget, non-blocking)
-    void initPluginState(api).then((stateOk) => {
+    void initPluginState(api, { fallbackDir: backendConfig.dbPath }).then((stateOk) => {
         if (stateOk) {
             api.logger.info('[memory-lancedb-pro] state store active (openKeyedStore)');
             void setStats({
