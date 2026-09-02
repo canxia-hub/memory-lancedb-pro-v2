@@ -8,9 +8,9 @@ Capability-first LanceDB memory plugin for OpenClaw — hybrid retrieval, Wiki k
 
 | Item | Detail |
 |------|--------|
-| Version | 4.1.0 |
+| Version | 4.2.1 |
 | OpenClaw | >=2026.5.6 |
-| Tools | 24 (10 memory + 8 wiki + 6 working-memory) |
+| Tools | 27 (10 memory + 11 wiki + 6 working-memory) |
 | Tests | 279 (11 test files) |
 | DB | LanceDB 0.33 embedded |
 | Embedding | 2560-dim (DashScope tongyi-embedding-vision-flash) |
@@ -92,7 +92,7 @@ dist/
 | `memory_list` | List memories with filters |
 | `memory_update` | Update an existing memory |
 | `memory_archive` | Archive (soft-delete) a memory |
-| `memory_promote` | Promote memory to durable/core |
+| `memory_promote` | Promote memory by updating metadata state/layer (default: confirmed/durable); does not write MEMORY.md |
 | `memory_stats` | Memory statistics |
 | `memory_debug` | Retrieval pipeline debug trace |
 | `memory_migrate_legacy` | Migrate from legacy database |
@@ -141,9 +141,7 @@ The legacy `.working-memory/` file layer was fully retired on 2026-08-07: 48 tas
 | **Wiki Vector Search** | Independent `wiki_pages` table with full-page embedding. Three-way fusion: vector x0.5 + keyword x0.3 + graph x0.2. Graceful degradation when embedding unavailable. |
 | **Wiki Incremental Build** | File fingerprint tracking (`build-manifest.json`, mtime + contentHash). Only re-extracts changed files. Dangling edge cleanup. No-change detection skips rebuild. |
 | **Wiki Corpus Supplement** | Wiki search integrated into `memory_recall` pipeline via corpus supplement interface. |
-| **autoRecall** | Automatic memory recall on agent turn end, with prompt injection defense and envelope sludge filtering. |
 | **access_count** | Recall access tracking with write-back. Feeds dreaming deep promotion quality scoring. |
-| **Dreaming Sweep** | 3-phase: light archive + deep promote + REM create. Scheduled via cron. |
 | **Doctor CLI** | Schema validation + contamination cleanup (`openclaw doctor`). |
 | **Host Interop** | Public artifacts provider + host events manager. |
 | **Plugin State** | openKeyedStore persistence (fire-and-forget, honest degradation). |
@@ -157,6 +155,8 @@ The legacy `.working-memory/` file layer was fully retired on 2026-08-07: 48 tas
 | **includeCompiledDigestPrompt** | Compiled wiki digest injected into prompt | Offline assessment pending. Enable via config `context.includeCompiledDigestPrompt: true`. |
 | **Semantic Edge Inference** | LLM-powered semantic edges in wiki graph | Not implemented in TypeScript (graceful degradation). Use Python wiki_ops.py for semantic builds. |
 | **Dreaming Engine** | Background dreaming process | Engine created but not started. Enable via config `dreaming.enabled: true`. |
+| **Reflection Engine** | agent_end distiller producing reflection memories | Disabled by default (2026-09-02). Enable via config `reflection.enabled: true`. |
+| **autoRecall** | Automatic memory recall at agent turn end | Disabled by default (schema default false). Enable via config `autoRecall: true`. |
 | **Rerank** | External rerank provider | Requires additional config (`retrieval.rerankProvider`, `retrieval.rerankModel`, `retrieval.rerankBaseUrl`). |
 | **Obsidian CLI** | Obsidian vault integration | Probe available but Obsidian not installed on this host. Auto-detects if installed. |
 
@@ -282,6 +282,9 @@ node scripts/test-wiki-incremental-build.mjs
           "dreaming": {
             "enabled": false  // default: false
           },
+          "reflection": {
+            "enabled": false  // default: false
+          },
           "workingMemory": {
             "enabled": true,                      // default: true; false fully unloads memory_wm_* tools
             "tableName": "working_memory",
@@ -326,6 +329,13 @@ node scripts/test-wiki-incremental-build.mjs
 目标 Agent 实时会话不可达时，代管方可直接在其车道创建 `planned` 通知任务——对方下次启动执行 `memory_wm_get` 时必达。这是 memory_wm_* 内生的离线通信通道。
 
 > 参考实例：本仓库作者的 8 个 Agent 已于 2026-08-07 完成全套核心文件适配（87 处精确替换），旧 `.working-memory/` 文件层彻底退役，48 条任务记录迁入 `working_memory` 表。
+
+## Changelog
+
+### 4.2.1 (2026-09-02)
+- **memory_promote 修复**：晋升只更新 LanceDB metadata（`metadata.layer` + `metadata.memory_layer` + `state`），不再写入 MEMORY.md managed block；durable 状态由 `memory_stats` 的 layer 统计体现。
+- **默认开关**：`dreaming.enabled` 与 `reflection.enabled` 默认关闭（schema 与运行配置一致）。
+- **测试对齐**：manifest 测试更新为 v4.2.1 / 27 tools。
 
 ## License
 
